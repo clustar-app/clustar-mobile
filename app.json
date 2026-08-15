@@ -1,0 +1,70 @@
+{
+  "expo": {
+    "name": "Clustar",
+    "slug": "clustar",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "scheme": "clustar",
+    "splash": {
+      "backgroundColor": "#09090B",
+      "resizeMode": "contain"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.clustar.mobile",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Clustar shows threads near you and lets you post to your surroundings. Your exact location is never shown to other people.",
+        "NSCameraUsageDescription": "Clustar uses your camera to snap photos for the clustars you post.",
+        "NSPhotoLibraryUsageDescription": "Clustar attaches photos you choose from your library to your clustars.",
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "package": "com.clustar.mobile",
+      "adaptiveIcon": {
+        "backgroundColor": "#09090B"
+      },
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION"
+      ]
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Clustar shows threads near you and lets you post to your surroundings."
+        }
+      ],
+      "expo-font",
+      [
+        "expo-notifications",
+        {
+          "color": "#FF3B30"
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "apiBaseUrl": "http://172.20.10.4:3000",
+      "googleWebClientId": "800422205572-p2pkr7hofnr1arvmfcj6jevoq8uhai5l.apps.googleusercontent.com",
+      "googleIosClientId": "800422205572-ndvml8e6chvh4e7anfotjpn5uouq96ob.apps.googleusercontent.com",
+      "googleAndroidClientId": "800422205572-c4dr7dpnm0mfste8qlfd82p15loc8ghv.apps.googleusercontent.com",
+      "router": {},
+      "eas": {
+        "projectId": "7e2849f9-9eb8-48aa-83e9-1dca928f1468"
+      }
+    },
+    "owner": "oceanencrypt"
+  }
+}
