@@ -83,11 +83,11 @@ export default {
     extra: {
       apiBaseUrl: API_BASE_URL,
       googleWebClientId:
-        "800422205572-p2pkr7hofnr1arvmfcj6jevoq8uhai5l.apps.googleusercontent.com",
+        "501087107860-rs99clckbsijqh922qlvikadoqm34hgs.apps.googleusercontent.com",
       googleIosClientId:
-        "800422205572-ndvml8e6chvh4e7anfotjpn5uouq96ob.apps.googleusercontent.com",
+        "501087107860-narjtg9n8gn31jvmvb5ud784e5i219lu.apps.googleusercontent.com",
       googleAndroidClientId:
-        "800422205572-c4dr7dpnm0mfste8qlfd82p15loc8ghv.apps.googleusercontent.com",
+        "501087107860-kta8aps9ag2d4vee7vih8a1ijf7ta6o0.apps.googleusercontent.com",
       router: {},
       eas: {
         projectId: "7e2849f9-9eb8-48aa-83e9-1dca928f1468",
