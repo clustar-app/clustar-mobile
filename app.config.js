@@ -9,6 +9,7 @@ export default {
     name: "Clustar",
     slug: "clustar",
     version: "0.1.0",
+    icon: "./assets/icon.png",
     orientation: "portrait",
     userInterfaceStyle: "dark",
     scheme: "clustar",
@@ -36,6 +37,8 @@ export default {
       googleServicesFile: "./google-services.json",
       softwareKeyboardLayoutMode: "resize",
       adaptiveIcon: {
+        foregroundImage: "./assets/adaptive-icon-foreground.png",
+        backgroundImage: "./assets/adaptive-icon-background.png",
         backgroundColor: "#09090B",
       },
       permissions: [
