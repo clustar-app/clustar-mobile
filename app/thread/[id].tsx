@@ -403,12 +403,13 @@ export default function ThreadScreen() {
     <SafeAreaView style={styles.safe} edges={["bottom"]}>
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-        keyboardVerticalOffset={80}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        keyboardVerticalOffset={Platform.OS === "android" ? 0 : 120}
       >
         <FlatList
           data={tree}
           keyExtractor={r => r.id}
+          keyboardShouldPersistTaps="handled"
           ListHeaderComponent={
             <View style={styles.header}>
               {clustar ? (
@@ -729,7 +730,7 @@ export default function ThreadScreen() {
               <Text style={styles.empty}>No replies yet — be the first.</Text>
             ) : null
           }
-          contentContainerStyle={{ paddingBottom: spacing.lg }}
+          contentContainerStyle={{ paddingBottom: spacing.xl + 24 }}
         />
 
         {/* "Replying to" chip — visible when nested reply mode is armed */}

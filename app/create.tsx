@@ -225,7 +225,8 @@ export default function CreateScreen() {
     <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        keyboardVerticalOffset={Platform.OS === "android" ? 0 : 120}
       >
         {/* Top bar — mirrors the mockup: close, title, Post pill on the right */}
         <View style={styles.topBar}>
@@ -249,8 +250,9 @@ export default function CreateScreen() {
 
         <ScrollView
           style={{ flex: 1 }}
-          contentContainerStyle={{ paddingHorizontal: spacing.xl, paddingBottom: 40 }}
+          contentContainerStyle={{ flexGrow: 1, paddingHorizontal: spacing.xl, paddingBottom: 120 }}
           keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
         >
           {/* Body */}
           {!coords && !locError && (

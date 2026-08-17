@@ -836,7 +836,7 @@ export default function DmThreadScreen() {
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : "height"}
-        keyboardVerticalOffset={0}
+        keyboardVerticalOffset={Platform.OS === "android" ? 0 : 120}
       >
         {q.isLoading ? (
           <View style={styles.center}>
@@ -847,8 +847,9 @@ export default function DmThreadScreen() {
             ref={listRef}
             data={rows}
             keyExtractor={row => row.kind === "segment_card" ? row.id : row.message.id}
-            contentContainerStyle={{ paddingVertical: spacing.md }}
+            contentContainerStyle={{ paddingVertical: spacing.md, paddingBottom: spacing.xl + 24 }}
             onContentSizeChange={onListContentSizeChange}
+            keyboardShouldPersistTaps="handled"
             renderItem={({ item }) => {
               if (item.kind === "segment_card") {
                 // Anon history segment — grouped card with header pill
