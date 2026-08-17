@@ -48,6 +48,20 @@ export default {
         "FOREGROUND_SERVICE",
         "FOREGROUND_SERVICE_LOCATION",
       ],
+      // Intent filter for Google OAuth redirect. Google Sign-In returns to
+      // the app via a custom URL scheme = the reversed Android client ID.
+      // Without this filter, the browser has nowhere to hand off the code
+      // and the user is left stranded on the "One moment please" screen.
+      intentFilters: [
+        {
+          action: "VIEW",
+          category: ["DEFAULT", "BROWSABLE"],
+          data: {
+            scheme:
+              "com.googleusercontent.apps.501087107860-kta8aps9ag2d4vee7vih8a1ijf7ta6o0",
+          },
+        },
+      ],
     },
     plugins: [
       "expo-router",
