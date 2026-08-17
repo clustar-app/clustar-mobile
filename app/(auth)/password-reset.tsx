@@ -27,6 +27,14 @@ export default function PasswordResetScreen() {
   const [busy, setBusy] = useState(false);
   const toast = useToast();
 
+  const handleBack = () => {
+    if (router.canGoBack()) {
+      router.back();
+      return;
+    }
+    router.replace("/(auth)/splash");
+  };
+
   const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
 
   const submit = async () => {
@@ -53,7 +61,7 @@ export default function PasswordResetScreen() {
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
         <View style={styles.container}>
-          <Pressable onPress={() => router.back()} style={styles.back} hitSlop={12}>
+          <Pressable onPress={handleBack} style={styles.back} hitSlop={12}>
             <Icon name="back" size={20} color={colors.t2} />
           </Pressable>
 

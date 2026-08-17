@@ -1,15 +1,45 @@
 import { useEffect, useState, useCallback } from "react";
 import Constants from "expo-constants";
-import {
-  GoogleSignin,
-  statusCodes,
-} from "@react-native-google-signin/google-signin";
+import { Platform } from "react-native";
 
-// Native Google Sign-In. No browser redirects — uses Google Play Services
-// directly. The Android OAuth client's SHA-1 fingerprint (registered in
-// Firebase / google-services.json) is what proves the app's identity.
-// The Web Client ID is required to receive an ID token we can verify on
-// the server side.
+type GoogleSigninModule = {
+  configure: (config: Record<string, any>) => void;
+  hasPlayServices: (options?: Record<string, any>) => Promise<void>;
+  signIn: () => Promise<any>;
+};
+
+let GoogleSignin: GoogleSigninModule | null = null;
+let statusCodes: { SIGN_IN_CANCELLED: string; PLAY_SERVICES_NOT_AVAILABLE: string } | null = null;
+
+// react-native-google-signin is a native module. Expo Go does not register it,
+// so importing it at startup crashes the app before the router mounts.
+// Guard the import and disable the feature when running in unsupported envs.
+try {
+  const googleSigninModule = require("@react-native-google-signin/google-signin") as {
+    GoogleSignin: GoogleSigninModule;
+    statusCodes: { SIGN_IN_CANCELLED: string; PLAY_SERVICES_NOT_AVAILABLE: string };
+  };
+
+  GoogleSignin = googleSigninModule.GoogleSignin ?? null;
+  statusCodes = googleSigninModule.statusCodes ?? null;
+
+  const extra = (Constants.expoConfig?.extra ?? {}) as {
+    googleWebClientId?: string;
+    googleIosClientId?: string;
+    googleAndroidClientId?: string;
+  };
+
+  if (GoogleSignin && (Platform.OS === "android" || Platform.OS === "ios")) {
+    GoogleSignin.configure({
+      webClientId: extra.googleWebClientId,
+      iosClientId: extra.googleIosClientId,
+      offlineAccess: false,
+      scopes: ["profile", "email"],
+    });
+  }
+} catch (error) {
+  console.warn("[googleAuth] Google Sign-In unavailable in this environment:", error);
+}
 
 const extra = (Constants.expoConfig?.extra ?? {}) as {
   googleWebClientId?: string;
@@ -17,15 +47,7 @@ const extra = (Constants.expoConfig?.extra ?? {}) as {
   googleAndroidClientId?: string;
 };
 
-// Configure once at module load. Safe to call multiple times.
-GoogleSignin.configure({
-  webClientId: extra.googleWebClientId,
-  iosClientId: extra.googleIosClientId,
-  offlineAccess: false,
-  scopes: ["profile", "email"],
-});
-
-export const googleConfigured = Boolean(extra.googleWebClientId);
+export const googleConfigured = Boolean(extra.googleWebClientId) && Boolean(GoogleSignin);
 
 type GoogleResponseType =
   | { type: "success"; params: { id_token: string } }
@@ -41,6 +63,14 @@ export function useGoogleAuth() {
   const [response, setResponse] = useState<GoogleResponseType | null>(null);
 
   const promptAsync = useCallback(async () => {
+    if (!GoogleSignin || !statusCodes) {
+      setResponse({
+        type: "error",
+        error: "Google sign-in is unavailable in this environment. Please use email or phone.",
+      });
+      return;
+    }
+
     try {
       await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
       const result = await GoogleSignin.signIn();
@@ -64,5 +94,5 @@ export function useGoogleAuth() {
     }
   }, []);
 
-  return { request: true, response, promptAsync };
+  return { request: Boolean(GoogleSignin), response, promptAsync };
 }

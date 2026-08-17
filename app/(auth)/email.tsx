@@ -44,6 +44,14 @@ export default function EmailAuthScreen() {
   const passwordValid = password.length >= 8;
   const canSubmit = emailValid && passwordValid && !busy;
 
+  const handleBack = () => {
+    if (router.canGoBack()) {
+      router.back();
+      return;
+    }
+    router.replace("/(auth)/splash");
+  };
+
   const submit = async () => {
     if (!canSubmit) return;
     setBusy(true);
@@ -88,7 +96,7 @@ export default function EmailAuthScreen() {
           contentContainerStyle={styles.container}
           keyboardShouldPersistTaps="handled"
         >
-          <Pressable onPress={() => router.back()} style={styles.back} hitSlop={12}>
+          <Pressable onPress={handleBack} style={styles.back} hitSlop={12}>
             <Icon name="back" size={20} color={colors.t2} />
           </Pressable>
 

@@ -8,7 +8,7 @@ import {
   Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter, useNavigation } from "expo-router";
 import { authApi, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/lib/toast";
@@ -23,9 +23,9 @@ const CELLS = 6;
 const RESEND_COOLDOWN_S = 30;
 
 export default function EmailVerifyScreen() {
-  const params = useLocalSearchParams<{ email?: string }>();
+  const params = useLocalSearchParams<{ email?: string; returnTo?: string }>();
   const router = useRouter();
-  const { user, updateUser, setOnboardingStep } = useAuth();
+  const { user, updateUser, setOnboardingStep, signOut } = useAuth();
   const toast = useToast();
   // Email comes from either the route param (fresh signup flow) or the
   // signed-in user (resume path after killing/reopening the app).
@@ -41,6 +41,15 @@ export default function EmailVerifyScreen() {
     const t = setTimeout(() => setCooldown(c => c - 1), 1000);
     return () => clearTimeout(t);
   }, [cooldown]);
+
+  const handleBack = async () => {
+    await signOut();
+    if (params.returnTo) {
+      router.replace(params.returnTo as string);
+      return;
+    }
+    router.replace("/(auth)/splash");
+  };
 
   const setDigit = (i: number, v: string) => {
     const cleaned = v.replace(/\D/g, "").slice(0, 1);
@@ -90,6 +99,10 @@ export default function EmailVerifyScreen() {
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.container}>
+        <Pressable onPress={handleBack} style={styles.back} hitSlop={12}>
+          <Text style={{ color: colors.t2, fontSize: 15 }}>← Back</Text>
+        </Pressable>
+
         <View style={styles.artWrap}>
           <View style={styles.artCircle}>
             <Icon name="mail" size={40} color={colors.accent} />
@@ -98,8 +111,7 @@ export default function EmailVerifyScreen() {
 
         <Text style={styles.title}>Check your email</Text>
         <Text style={styles.subtitle}>
-          We sent a 6-digit code to <Text style={{ color: colors.t1 }}>{email}</Text>. In dev,
-          it also prints to the API terminal.
+          We sent a 6-digit code to <Text style={{ color: colors.t1 }}>{email}</Text>.
         </Text>
 
         <View style={styles.row}>
@@ -138,6 +150,7 @@ export default function EmailVerifyScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
   container: { flex: 1, padding: spacing.xxl, justifyContent: "center" },
+  back: { position: "absolute", top: 40, left: 20 },
   artWrap: { alignItems: "center", marginBottom: spacing.xxl },
   artCircle: {
     width: 96,

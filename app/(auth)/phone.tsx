@@ -17,12 +17,18 @@ import { colors, radius, spacing } from "@/lib/theme";
 
 export default function PhoneScreen() {
   const router = useRouter();
-  const navigation = useNavigation();
   const [prefix, setPrefix] = useState("+234");
   const [phone, setPhone] = useState("");
   const [loading, setLoading] = useState(false);
-  const canGoBack = navigation.canGoBack();
   const toast = useToast();
+
+  const handleBack = () => {
+    if (router.canGoBack()) {
+      router.back();
+      return;
+    }
+    router.replace("/(auth)/splash");
+  };
 
   const fullPhone = `${prefix}${phone.replace(/\s+/g, "")}`;
 
@@ -34,7 +40,10 @@ export default function PhoneScreen() {
     setLoading(true);
     try {
       await authApi.sendOtp(fullPhone);
-      router.push({ pathname: "/(auth)/otp", params: { phone: fullPhone } });
+      router.push({
+        pathname: "/(auth)/otp",
+        params: { phone: fullPhone, returnTo: "/(auth)/phone" },
+      });
     } catch (err) {
       const msg = err instanceof ApiError ? err.message : "Something went wrong";
       toast.error(msg);
@@ -50,11 +59,9 @@ export default function PhoneScreen() {
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
         <View style={styles.container}>
-          {canGoBack && (
-            <Pressable onPress={() => router.back()} style={styles.back} hitSlop={12}>
-              <Text style={{ color: colors.t2, fontSize: 15 }}>← Back</Text>
-            </Pressable>
-          )}
+          <Pressable onPress={handleBack} style={styles.back} hitSlop={12}>
+            <Text style={{ color: colors.t2, fontSize: 15 }}>← Back</Text>
+          </Pressable>
 
           <Text style={styles.brand}>
             Clust<Text style={{ color: colors.accent }}>a</Text>r
@@ -62,7 +69,7 @@ export default function PhoneScreen() {
 
           <Text style={styles.title}>What's your number?</Text>
           <Text style={styles.subtitle}>
-            We'll text you a code. In dev, it prints to your API terminal.
+            We'll text you a code.
           </Text>
 
           <View style={styles.phoneRow}>

@@ -17,13 +17,22 @@ import { colors, radius, spacing } from "@/lib/theme";
 const CELLS = 6;
 
 export default function OtpScreen() {
-  const { phone } = useLocalSearchParams<{ phone: string }>();
+  const { phone, returnTo } = useLocalSearchParams<{ phone?: string; returnTo?: string }>();
   const router = useRouter();
-  const { signIn } = useAuth();
+  const { signIn, signOut } = useAuth();
   const toast = useToast();
   const [digits, setDigits] = useState<string[]>(Array(CELLS).fill(""));
   const [loading, setLoading] = useState(false);
   const inputs = useRef<Array<TextInput | null>>([]);
+
+  const handleBack = async () => {
+    await signOut();
+    if (returnTo) {
+      router.replace(returnTo as string);
+      return;
+    }
+    router.replace("/(auth)/splash");
+  };
 
   const setDigit = (i: number, v: string) => {
     const cleaned = v.replace(/\D/g, "").slice(0, 1);
@@ -62,7 +71,7 @@ export default function OtpScreen() {
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.container}>
-        <Pressable onPress={() => router.back()} style={styles.back}>
+        <Pressable onPress={handleBack} style={styles.back}>
           <Text style={{ color: colors.t2, fontSize: 15 }}>← Back</Text>
         </Pressable>
 

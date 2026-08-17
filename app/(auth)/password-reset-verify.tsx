@@ -30,6 +30,14 @@ export default function PasswordResetVerifyScreen() {
   const { email } = useLocalSearchParams<{ email: string }>();
   const router = useRouter();
   const [digits, setDigits] = useState<string[]>(Array(CELLS).fill(""));
+
+  const handleBack = () => {
+    if (router.canGoBack()) {
+      router.back();
+      return;
+    }
+    router.replace("/(auth)/splash");
+  };
   const [password, setPassword] = useState("");
   const [showPass, setShowPass] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -99,7 +107,7 @@ export default function PasswordResetVerifyScreen() {
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
         <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-          <Pressable onPress={() => router.back()} style={styles.back} hitSlop={12}>
+          <Pressable onPress={handleBack} style={styles.back} hitSlop={12}>
             <Icon name="back" size={20} color={colors.t2} />
           </Pressable>
 
