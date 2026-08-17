@@ -12,7 +12,20 @@
           "package_name": "com.clustar.mobile"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "501087107860-kta8aps9ag2d4vee7vih8a1ijf7ta6o0.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.clustar.mobile",
+            "certificate_hash": "d8766f3996d7c3660803dc13eba4582084dba036"
+          }
+        },
+        {
+          "client_id": "501087107860-rs99clckbsijqh922qlvikadoqm34hgs.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyCknE6mvlT3mHdyQCQ_ry2TloWiLuLA3GM"
@@ -20,7 +33,19 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "501087107860-rs99clckbsijqh922qlvikadoqm34hgs.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "501087107860-narjtg9n8gn31jvmvb5ud784e5i219lu.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.clustar.mobile"
+              }
+            }
+          ]
         }
       }
     }

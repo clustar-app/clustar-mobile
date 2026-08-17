@@ -12,7 +12,10 @@ export default {
     icon: "./assets/icon.png",
     orientation: "portrait",
     userInterfaceStyle: "dark",
-    scheme: "clustar",
+    scheme: [
+      "clustar",
+      "com.googleusercontent.apps.501087107860-kta8aps9ag2d4vee7vih8a1ijf7ta6o0",
+    ],
     assetBundlePatterns: ["**/*"],
     ios: {
       supportsTablet: false,
@@ -52,6 +55,12 @@ export default {
     plugins: [
       "expo-router",
       "expo-secure-store",
+      [
+        "expo-web-browser",
+        {
+          experimentalLauncherActivity: true,
+        },
+      ],
       [
         "expo-location",
         {
