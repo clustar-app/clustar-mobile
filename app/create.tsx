@@ -96,6 +96,10 @@ export default function CreateScreen() {
 
   const mutation = useMutation({
     mutationFn: async () => {
+      if (!coords) {
+        throw new Error("Fetching Location...");
+      }
+
       let mediaUrl: string | undefined;
       let mediaType: "image" | undefined;
       if (pendingImage) {
@@ -112,8 +116,8 @@ export default function CreateScreen() {
       return clustarApi.create(accessToken!, {
         body: body.trim(),
         tags,
-        lat: coords!.lat,
-        lng: coords!.lng,
+        lat: coords.lat,
+        lng: coords.lng,
         radius_m: radiusM,
         anchor_mode: anchorMode,
         lifespan_hours: lifespanHours,
@@ -214,7 +218,7 @@ export default function CreateScreen() {
     toast.info(`${label} attachments coming in the next phase`);
 
   const canPost =
-    body.trim().length > 0 || (!!pendingImage && coords);
+    (!!coords && (body.trim().length > 0 || !!pendingImage)) || false;
   const isBusy = mutation.isPending || uploading;
 
   return (
@@ -249,6 +253,18 @@ export default function CreateScreen() {
           keyboardShouldPersistTaps="handled"
         >
           {/* Body */}
+          {!coords && !locError && (
+            <View style={styles.locationHint}>
+              <Text style={styles.locationHintText}>Fetching Location...</Text>
+            </View>
+          )}
+
+          {locError && (
+            <View style={styles.locationHintError}>
+              <Text style={styles.locationHintErrorText}>{locError}</Text>
+            </View>
+          )}
+
           <TextInput
             style={styles.textarea}
             placeholder="What's happening around you?"
