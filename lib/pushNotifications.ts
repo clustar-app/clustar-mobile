@@ -71,20 +71,35 @@ export async function registerForPushNotifications(): Promise<string | null> {
   }
   if (final !== "granted") return null;
 
-  try {
-    // Expo's push token; falls back gracefully when no projectId is set
-    // (bare dev builds without EAS config).
-    const projectId =
-      Constants.expoConfig?.extra?.eas?.projectId ??
-      Constants.easConfig?.projectId;
-    const tokenData = await Notifications.getExpoPushTokenAsync(
-      projectId ? { projectId } : undefined
-    );
-    return tokenData.data;
-  } catch (err) {
-    console.warn("[push] getExpoPushTokenAsync failed:", err);
-    return null;
+  // Retry with exponential backoff. FCM's SERVICE_NOT_AVAILABLE is
+  // usually transient (Play Services warming up post-install, brief
+  // network flake, etc.) — one shot at token fetch was giving up too
+  // early. Three attempts spread over ~17s catch almost every case.
+  const projectId =
+    Constants.expoConfig?.extra?.eas?.projectId ??
+    Constants.easConfig?.projectId;
+  const delays = [0, 2000, 5000, 10_000];
+
+  for (let i = 0; i < delays.length; i++) {
+    if (delays[i] > 0) await new Promise(r => setTimeout(r, delays[i]));
+    try {
+      const tokenData = await Notifications.getExpoPushTokenAsync(
+        projectId ? { projectId } : undefined
+      );
+      if (i > 0) console.log(`[push] token acquired on retry ${i}`);
+      return tokenData.data;
+    } catch (err: any) {
+      const msg = String(err?.message ?? err);
+      const isTransient = msg.includes("SERVICE_NOT_AVAILABLE") || msg.includes("Fetching the token failed");
+      const isLast = i === delays.length - 1;
+      if (isLast || !isTransient) {
+        console.warn(`[push] getExpoPushTokenAsync failed${isLast ? " (final attempt)" : ""}:`, err);
+        return null;
+      }
+      console.log(`[push] attempt ${i + 1} failed with transient error, retrying...`);
+    }
   }
+  return null;
 }
 
 export function platformString(): "ios" | "android" | "web" {

@@ -225,6 +225,26 @@ export default function SettingsScreen() {
                 <Icon name="chevron-down" size={16} color={colors.t3} />
               </Pressable>
 
+              {/* Admin-only link — server-side gate on /admin/* still
+                  enforces access; this just hides the entry point from
+                  non-admins so they don't wonder what it is. */}
+              {meQuery.data?.is_admin && (
+                <>
+                  <View style={styles.divider} />
+                  <Pressable
+                    onPress={() => router.push("/admin")}
+                    style={styles.linkRow}
+                  >
+                    <Icon name="radar" size={16} color="#f97316" />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.linkRowTitle}>Moderation queue</Text>
+                      <Text style={styles.linkRowSub}>Review reports and take action</Text>
+                    </View>
+                    <Icon name="chevron-down" size={16} color={colors.t3} />
+                  </Pressable>
+                </>
+              )}
+
               <View style={styles.divider} />
 
               {/* Discovery range slider — controls the "Showing within"

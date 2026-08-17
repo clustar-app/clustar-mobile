@@ -73,16 +73,40 @@ export default function MessagesScreen() {
     socket.on("dm:request:new", refetchInboxes);
     socket.on("dm:thread:accepted", refetchInboxes);
     socket.on("dm:merged", refetchInboxes);
-    // Prefer dm:inbox:bump (user-room) over dm:message:new (thread-room)
-    // — the latter never reaches sockets that aren't inside the thread
-    // room, which broke the "last message updates on inbox" behavior
-    // when a message arrived while you were on a different screen.
-    socket.on("dm:inbox:bump", refetchInboxes);
+    // dm:inbox:bump: patch the specific row in-place instead of
+    // invalidating. Prior version invalidated → refetched → often
+    // raced markRead and rehydrated unread_count > 0 briefly on
+    // return-to-inbox (TC-046). Patching preserves any unread=0 the
+    // thread screen wrote while the user was actively viewing.
+    const bumpPatch = (payload: { thread_id: string; message: any }) => {
+      queryClient.setQueryData<any[]>(["dm-threads", user?.id], (prev) =>
+        prev
+          ? prev.map((t) =>
+              t.id === payload.thread_id
+                ? {
+                    ...t,
+                    last_message: {
+                      body: payload.message.body,
+                      media_url: payload.message.media_url,
+                      created_at: payload.message.created_at,
+                      sender_id: payload.message.sender_id,
+                      deleted_at: payload.message.deleted_at ?? null,
+                    },
+                    // Preserve existing unread_count — thread screen
+                    // has already zeroed it if user was viewing. Don't
+                    // reset here or we lose that signal.
+                  }
+                : t
+            )
+          : prev
+      );
+    };
+    socket.on("dm:inbox:bump", bumpPatch);
     return () => {
       socket.off("dm:request:new", refetchInboxes);
       socket.off("dm:thread:accepted", refetchInboxes);
       socket.off("dm:merged", refetchInboxes);
-      socket.off("dm:inbox:bump", refetchInboxes);
+      socket.off("dm:inbox:bump", bumpPatch);
     };
   }, [accessToken, queryClient]);
 

@@ -7,8 +7,15 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import * as Notifications from "expo-notifications";
 import { AuthContext, useAuthProviderValue, useAuth } from "@/lib/auth";
 import { connectSocket, disconnectSocket } from "@/lib/realtime";
+import { AppState } from "react-native";
 import { registerForPushNotifications, platformString } from "@/lib/pushNotifications";
-import { notificationsApi } from "@/lib/api";
+import { notificationsApi, travellingApi } from "@/lib/api";
+// Side-effect import: registers TRAVELLING_ANCHOR_TASK with TaskManager
+// at module load. Required — expo-task-manager expects tasks to be
+// defined synchronously on module init, not inside components.
+import {
+  startTravellingAnchorTask, stopTravellingAnchorTask, isTravellingAnchorTaskRunning,
+} from "@/lib/backgroundLocation";
 import { colors } from "@/lib/theme";
 
 const queryClient = new QueryClient({
@@ -100,28 +107,79 @@ function AuthGate({ children }: { children: React.ReactNode }) {
     })();
   }, [accessToken]);
 
-  // Tap-to-route handler. Runs once — the response listener is a global
-  // subscription. Reads notification.data.type to figure out where to go.
+  // Tap-to-route handler. Two paths:
+  //   1. addNotificationResponseReceivedListener — fires when tap
+  //      arrives while app is warm/foreground/background.
+  //   2. useLastNotificationResponse — captures a tap that COLD-STARTED
+  //      the app; the listener above misses those because it hasn't
+  //      been registered yet at cold start. Prior version missed
+  //      popping/nearby taps from killed state (TC-097/108).
+  const lastResponse = Notifications.useLastNotificationResponse();
+  const handledColdStart = useRef<string | null>(null);
+  const routeFromNotification = (data: any) => {
+    if (!data?.type) return;
+    switch (data.type) {
+      case "dm_message":
+      case "dm_request":
+      case "dm_accepted":
+      case "dm_merged":
+        if (data.thread_id) router.push(`/dm/${data.thread_id}`);
+        break;
+      case "reply":
+      case "nearby_clustar":
+      case "popping_clustar":
+        if (data.clustar_id) router.push(`/thread/${data.clustar_id}`);
+        break;
+    }
+  };
   useEffect(() => {
     const sub = Notifications.addNotificationResponseReceivedListener((response) => {
       const data = response.notification.request.content.data as any;
-      if (!data?.type) return;
-      switch (data.type) {
-        case "dm_message":
-        case "dm_request":
-        case "dm_accepted":
-        case "dm_merged":
-          if (data.thread_id) router.push(`/dm/${data.thread_id}`);
-          break;
-        case "reply":
-        case "nearby_clustar":
-        case "popping_clustar":
-          if (data.clustar_id) router.push(`/thread/${data.clustar_id}`);
-          break;
-      }
+      routeFromNotification(data);
     });
     return () => sub.remove();
   }, [router]);
+  // Cold-start path: use the last notification response once user is
+  // signed in (routing needs Expo Router mounted + auth resolved).
+  useEffect(() => {
+    if (!lastResponse || !user || loading) return;
+    const id = lastResponse.notification.request.identifier;
+    if (handledColdStart.current === id) return;
+    handledColdStart.current = id;
+    routeFromNotification(lastResponse.notification.request.content.data as any);
+  }, [lastResponse, user, loading, router]);
+
+  // Background travelling-anchor lifecycle. Poll on foreground:
+  //   • has_active=true and task not running  → start task
+  //   • has_active=false and task running     → stop task
+  // Cheap ~150ms endpoint. Also re-checks whenever app returns to
+  // foreground so we react to clustars created/expired on other devices.
+  useEffect(() => {
+    if (!accessToken) return;
+    let cancelled = false;
+    const reconcile = async () => {
+      try {
+        const { has_active } = await travellingApi.hasMine(accessToken);
+        if (cancelled) return;
+        const running = await isTravellingAnchorTaskRunning();
+        if (has_active && !running) {
+          const r = await startTravellingAnchorTask();
+          if (!r.started) console.log("[travelling] not started:", r.reason);
+        } else if (!has_active && running) {
+          await stopTravellingAnchorTask();
+        }
+      } catch (err) {
+        // Don't crash the app on a poll failure — the task will keep
+        // its current state until the next reconcile.
+        console.log("[travelling] reconcile failed:", err);
+      }
+    };
+    reconcile();
+    const sub = AppState.addEventListener("change", (s) => {
+      if (s === "active") reconcile();
+    });
+    return () => { cancelled = true; sub.remove(); };
+  }, [accessToken]);
 
   // Clear the React Query cache whenever the signed-in user changes.
   // This prevents cross-user data bleed — before this, user B could briefly
@@ -202,6 +260,8 @@ export default function RootLayout() {
               <Stack.Screen name="messages" options={{ headerShown: false }} />
               <Stack.Screen name="dm-requests" options={{ headerShown: false }} />
               <Stack.Screen name="blocked" options={{ headerShown: false }} />
+              <Stack.Screen name="admin" options={{ headerShown: false }} />
+              <Stack.Screen name="search" options={{ headerShown: false }} />
               <Stack.Screen name="dm/[threadId]" options={{ headerShown: false }} />
               <Stack.Screen
                 name="dm-compose"

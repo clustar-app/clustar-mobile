@@ -279,6 +279,7 @@ export interface Profile {
   tier: "free" | "plus" | "pro";
   last_active_at: string | null;
   hide_last_seen: boolean;
+  is_admin: boolean;
   is_me: boolean;
   is_blocked_by_me: boolean;
   is_following: boolean;
@@ -361,6 +362,8 @@ export interface DmThreadSummary {
   accepted_at: string | null;
   unlock_clustar_id: string | null;
   my_identity: { type: "user" | "burner"; id: string; handle: string | null };
+  is_blocked_by_me?: boolean;
+  is_blocked_by_them?: boolean;
   other: {
     id: string;
     handle: string;
@@ -418,6 +421,9 @@ export const dmsApi = {
     apiRequest<{
       sent: boolean;
       silent?: boolean;
+      blocked?: boolean;
+      blocked_by_me?: boolean;
+      blocked_by_them?: boolean;
       thread_id?: string;
       requires_acceptance?: boolean;
       message?: DmMessage;
@@ -437,6 +443,9 @@ export const dmsApi = {
     apiRequest<{
       sent: boolean;
       silent?: boolean;
+      blocked?: boolean;
+      blocked_by_me?: boolean;
+      blocked_by_them?: boolean;
       thread_id?: string;
       requires_acceptance?: boolean;
       message?: DmMessage;
@@ -515,6 +524,43 @@ export interface BlockedRow {
   created_at: string;
 }
 
+// ── Admin (moderation queue) ──────────────────────────────────────────────
+export interface ReportRow {
+  id: string;
+  target_type: "clustar" | "reply" | "dm_thread" | "dm_message" | "user";
+  target_id: string;
+  reporter_id: string;
+  reporter_type: "user" | "burner";
+  reason: string;
+  content_snapshot: any;
+  created_at: string;
+  resolved_at: string | null;
+  resolution: string | null;
+  moderator_id: string | null;
+  reporter_handle: string | null;
+  author_handle: string | null;
+  is_open: boolean;
+}
+
+export const adminApi = {
+  listReports: (token: string, status: "open" | "resolved" | "all" = "open") =>
+    apiRequest<ReportRow[]>(`/admin/reports?status=${status}`, { token }),
+  stats: (token: string) =>
+    apiRequest<{ open: number; resolved_24h: number }>("/admin/stats", { token }),
+  dismiss: (token: string, id: string, note = "") =>
+    apiRequest<{ resolved: boolean; action: string }>(`/admin/reports/${id}/dismiss`, {
+      method: "POST", token, body: { note },
+    }),
+  deleteContent: (token: string, id: string, note = "") =>
+    apiRequest<any>(`/admin/reports/${id}/delete-content`, {
+      method: "POST", token, body: { note },
+    }),
+  suspendUser: (token: string, id: string, note = "") =>
+    apiRequest<any>(`/admin/reports/${id}/suspend-user`, {
+      method: "POST", token, body: { note },
+    }),
+};
+
 export const safetyApi = {
   listBlocks: (token: string) =>
     apiRequest<BlockedRow[]>("/blocks", { token }),
@@ -544,6 +590,47 @@ export const safetyApi = {
 };
 
 // ── Notifications ──────────────────────────────────────────────────────────
+// ── Travelling anchors ────────────────────────────────────────────────────
+export const travellingApi = {
+  // Bulk update — pushes one fix to every active travelling clustar.
+  updateAnchors: (token: string, lat: number, lng: number) =>
+    apiRequest<{ updated: number; ids: string[] }>("/clustars/anchors", {
+      method: "PATCH", token, body: { lat, lng },
+    }),
+
+  // Does the caller have any active travelling clustars?
+  // Client uses this on foreground to decide whether to keep the
+  // background location task running or stop it.
+  hasMine: (token: string) =>
+    apiRequest<{ has_active: boolean }>("/clustars/travelling/mine", { token }),
+};
+
+// ── Search + trending ─────────────────────────────────────────────────────
+export interface SearchUserResult {
+  id: string;
+  handle: string;
+  display_name: string | null;
+  avatar_url: string | null;
+  tier: "free" | "plus" | "pro";
+  last_active_at: string | null;
+  score: number;
+}
+
+export const searchApi = {
+  users: (token: string, q: string) =>
+    apiRequest<SearchUserResult[]>(`/search/users?q=${encodeURIComponent(q)}`, { token }),
+  clustars: (token: string, q: string, lat: number, lng: number, range_m: number) =>
+    apiRequest<any[]>(`/search/clustars`, {
+      token,
+      query: { q, lat, lng, range_m },
+    }),
+};
+
+export const trendingApi = {
+  list: (token: string, limit = 20) =>
+    apiRequest<FeedItem[]>(`/trending?limit=${limit}`, { token }),
+};
+
 export const nearbyApi = {
   activeCount: (token: string, lat: number, lng: number, range_m: number) =>
     apiRequest<{ count: number }>("/nearby/active-count", {

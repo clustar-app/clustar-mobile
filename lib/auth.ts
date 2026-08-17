@@ -134,6 +134,24 @@ export function useAuthProviderValue(): AuthState {
 
   const signOut = useCallback(async () => {
     const refresh = authStore.getRefresh();
+    const access = authStore.getAccess();
+
+    // Unregister THIS device's push token BEFORE clearing auth. Prior
+    // version left the token bound to the signed-out account server-
+    // side, so pushes for that account continued firing at this device
+    // (TC-078 fix). Fire-and-forget — worst case is a stale row that
+    // gets pruned on next DeviceNotRegistered ticket.
+    if (access) {
+      try {
+        const { registerForPushNotifications } = await import("./pushNotifications.js");
+        const { notificationsApi } = await import("./api.js");
+        const currentToken = await registerForPushNotifications();
+        if (currentToken) {
+          await notificationsApi.unregister(access, currentToken).catch(() => {});
+        }
+      } catch { /* ignore — never block sign-out on push cleanup */ }
+    }
+
     if (refresh) {
       const base = (require("expo-constants").default.expoConfig?.extra?.apiBaseUrl as string) ?? "http://localhost:3000";
       fetch(`${base}/auth/logout`, {

@@ -221,6 +221,11 @@ export default function DmThreadScreen() {
 
     const onMessage = (payload: { thread_id: string; message: DmMessage }) => {
       if (payload.thread_id !== threadId) return;
+      // Clear any lingering typing bubble from this sender — receiving
+      // a real message from them implies they've stopped typing. Kills
+      // the "ghost bubble that shows for 3s after send" issue.
+      setTypingFrom(prev => (prev === payload.message.sender_id ? null : prev));
+      clearTimeout(typingTimeout.current);
       // Patch the thread-message cache. Append to a segment whose
       // thread_id MATCHES the incoming message — do NOT blindly push
       // into the last segment (that bug made main-sent messages land
@@ -260,6 +265,14 @@ export default function DmThreadScreen() {
             )
           : prev
       );
+      // Fire markRead IMMEDIATELY on incoming message. Prior version
+      // waited for the useEffect on messages.length which had a small
+      // render delay — sender's tick lagged by 200-500ms feeling stale.
+      // Fire-and-forget: server-side markRead is idempotent + broadcasts
+      // dm:message:read to the sender's socket.
+      if (thread?.status === "accepted" && accessToken && threadId) {
+        dmsApi.markRead(accessToken, threadId).catch(() => {});
+      }
     };
     const onRead = (payload: { thread_id: string; message_ids: string[]; read_at: string }) => {
       if (payload.thread_id !== threadId) return;
@@ -331,6 +344,20 @@ export default function DmThreadScreen() {
     mutationFn: (payload: { body?: string; media?: any }) =>
       dmsApi.sendInThread(accessToken!, threadId!, payload.body, payload.media),
     onSuccess: (res) => {
+      // Blocked path — surface the reason instead of silent-failing.
+      // Server returns { blocked: true, blocked_by_them: true } etc.
+      if ((res as any).blocked) {
+        Alert.alert(
+          "Message not sent",
+          (res as any).blocked_by_them
+            ? "You've been blocked. Messages you send won't be delivered."
+            : "You blocked this user. Unblock from their profile to chat."
+        );
+        // Force-refetch so the banner/composer state updates without
+        // requiring the user to leave and come back.
+        queryClient.invalidateQueries({ queryKey: ["dm-messages", threadId] });
+        return;
+      }
       if (res.message) {
         queryClient.setQueryData<any>(["dm-messages", threadId], (prev: any) => {
           if (!prev) return prev;
@@ -348,9 +375,6 @@ export default function DmThreadScreen() {
             segments: prev.segments ? appendToSegments(prev.segments, msg, prev.thread) : prev.segments,
           };
         });
-        // Also invalidate as a safety net — if the sent message was into a
-        // new-to-us thread (e.g. server auto-split a segment), the naive
-        // client patch may lack header metadata. Refetch reconciles.
         queryClient.invalidateQueries({ queryKey: ["dm-messages", threadId] });
       }
       setDraft("");
@@ -542,12 +566,27 @@ export default function DmThreadScreen() {
     }
   };
 
-  // Scroll to bottom on new messages OR when typing indicator toggles
-  // (issue #10 — dots used to pop up off-screen).
+  // Scroll to bottom on new messages OR when typing indicator toggles.
+  // Note: initial-load scroll is handled by onContentSizeChange below
+  // (FlatList content isn't laid out yet when this effect first fires,
+  // so scrollToEnd here silently no-ops on mount). This effect handles
+  // subsequent updates once content is measured.
   useEffect(() => {
     const t = setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
     return () => clearTimeout(t);
   }, [rows.length, typingFrom]);
+
+  // First-content-size-change scroll for the "opening a thread with
+  // 20 unread messages should land at the bottom" case. Fires once
+  // when the FlatList's content is actually measured — reliably works
+  // even for long threads where the useEffect above races the layout.
+  const hasScrolledOnMount = useRef(false);
+  const onListContentSizeChange = () => {
+    if (hasScrolledOnMount.current) return;
+    if (rows.length === 0) return;
+    hasScrolledOnMount.current = true;
+    listRef.current?.scrollToEnd({ animated: false });
+  };
 
   const canSend = (draft.trim().length > 0 || !!pendingMedia) && !sendMut.isPending && !uploading;
 
@@ -790,9 +829,13 @@ export default function DmThreadScreen() {
         </View>
       )}
 
+      {/* Android: behavior="height" resizes the container to sit above
+          the keyboard. Prior version passed undefined which relied on
+          adjustResize alone — on some Android devices the composer
+          slid under the keyboard. */}
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
         keyboardVerticalOffset={0}
       >
         {q.isLoading ? (
@@ -805,6 +848,7 @@ export default function DmThreadScreen() {
             data={rows}
             keyExtractor={row => row.kind === "segment_card" ? row.id : row.message.id}
             contentContainerStyle={{ paddingVertical: spacing.md }}
+            onContentSizeChange={onListContentSizeChange}
             renderItem={({ item }) => {
               if (item.kind === "segment_card") {
                 // Anon history segment — grouped card with header pill
@@ -909,8 +953,26 @@ export default function DmThreadScreen() {
           </View>
         )}
 
-        {/* Composer hidden while previewing an incoming request */}
-        {!isPreviewingRequest && (
+        {/* Blocked banner — replaces composer entirely. User can still
+            read history but can't send. If they mid-typed, the input
+            is gone so the draft's just discarded. */}
+        {thread?.is_blocked_by_them && (
+          <View style={styles.blockedFooter}>
+            <Icon name="close" size={14} color={colors.danger ?? "#ef4444"} />
+            <Text style={styles.blockedFooterText}>
+              You've been blocked. Messages you send won't be delivered.
+            </Text>
+          </View>
+        )}
+        {thread?.is_blocked_by_me && !thread?.is_blocked_by_them && (
+          <View style={styles.blockedFooter}>
+            <Text style={styles.blockedFooterText}>
+              You blocked this user. Unblock from their profile to chat again.
+            </Text>
+          </View>
+        )}
+        {/* Composer hidden while previewing an incoming request OR while blocked */}
+        {!isPreviewingRequest && !thread?.is_blocked_by_them && !thread?.is_blocked_by_me && (
         <View style={styles.composer}>
           <Pressable
             onPress={startAttach}
@@ -1244,6 +1306,16 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   acceptPillText: { color: colors.bg, fontWeight: "700", fontSize: 14 },
+  blockedFooter: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    padding: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    backgroundColor: "rgba(239,68,68,0.08)",
+  },
+  blockedFooterText: { color: colors.t2, fontSize: 12, flex: 1, lineHeight: 17 },
 
   // Pre-reveal anon segment — visually grouped card so users read the
   // history as a discrete "chapter" separate from live main-account

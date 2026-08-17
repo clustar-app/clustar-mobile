@@ -134,6 +134,17 @@ export default function CreateScreen() {
         });
       }
       queryClient.invalidateQueries({ queryKey: ["feed"] });
+
+      // Kick off the background-location task if this was a travelling
+      // clustar. Fire-and-forget so the return-to-feed isn't gated on
+      // permission prompts. The task is idempotent — safe to call even
+      // if already running (silently no-ops).
+      if (anchorMode === "travelling") {
+        import("@/lib/backgroundLocation")
+          .then(m => m.startTravellingAnchorTask())
+          .catch(err => console.log("[travelling] start failed:", err));
+      }
+
       router.back();
     },
     onError: err => {

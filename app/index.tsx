@@ -11,7 +11,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
-import { clustarApi, likeApi, FeedItem, safetyApi, ApiError, nearbyApi } from "@/lib/api";
+import { clustarApi, likeApi, FeedItem, safetyApi, ApiError, nearbyApi, trendingApi } from "@/lib/api";
 import { usePreferences } from "@/lib/preferences";
 import { useAuth } from "@/lib/auth";
 import { getCurrentLocation, getPlaceName, Coords } from "@/lib/location";
@@ -82,17 +82,30 @@ export default function FeedScreen() {
     })();
   }, []);
 
-  const {
-    data: items,
-    isLoading,
-    isFetching,
-    refetch,
-    error,
-  } = useQuery({
+  // Feed axis: 'nearby' (default, geo) or 'trending' (global, heat-sorted).
+  // Trending is the "dead zone" fallback — when the user's local area has
+  // nothing going on, they can still see what's popping elsewhere. Toggle
+  // via header pill (below).
+  const [axis, setAxis] = useState<"nearby" | "trending">("nearby");
+
+  const nearbyFeedQ = useQuery({
     queryKey: ["feed", coords?.lat, coords?.lng, rangeM],
     queryFn: () => clustarApi.discover(accessToken!, coords!.lat, coords!.lng, rangeM),
-    enabled: !!accessToken && !!coords,
+    enabled: !!accessToken && !!coords && axis === "nearby",
   });
+  const trendingFeedQ = useQuery({
+    queryKey: ["trending"],
+    queryFn: () => trendingApi.list(accessToken!, 30),
+    enabled: !!accessToken && axis === "trending",
+    // Trending changes slower than nearby feed — 90s cadence is fine.
+    refetchInterval: 90_000,
+  });
+  const activeFeedQ = axis === "nearby" ? nearbyFeedQ : trendingFeedQ;
+  const items = activeFeedQ.data;
+  const isLoading = activeFeedQ.isLoading;
+  const isFetching = activeFeedQ.isFetching;
+  const refetch = activeFeedQ.refetch;
+  const error = activeFeedQ.error;
 
   // Nearby active-user count — refetched every 60s. Small widget above
   // the feed showing "N nearby" so users know the app is alive around
@@ -250,13 +263,35 @@ export default function FeedScreen() {
         <Text style={styles.brand}>
           Clust<Text style={{ color: colors.accent }}>a</Text>r
         </Text>
-        {/* Tap own @handle → own profile (Edit lives inside that screen).
-            Previously this was tied to signOut, which was harsh + hidden. */}
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+          <Pressable onPress={() => router.push("/search")} hitSlop={12}>
+            <Icon name="search" size={20} color={colors.t2} />
+          </Pressable>
+          <Pressable
+            onPress={() => user?.handle && router.push(`/user/${user.handle}`)}
+            hitSlop={16}
+          >
+            <Text style={{ color: colors.t2, fontSize: 13 }}>@{user?.handle}</Text>
+          </Pressable>
+        </View>
+      </View>
+
+      {/* Nearby ↔ Trending axis toggle — small pill row above the feed.
+          "Nearby" = geo-scoped (default). "Trending" = global, ranked by
+          heat/recency. Fallback for dead-zone users. */}
+      <View style={styles.axisRow}>
         <Pressable
-          onPress={() => user?.handle && router.push(`/user/${user.handle}`)}
-          hitSlop={16}
+          onPress={() => setAxis("nearby")}
+          style={[styles.axisChip, axis === "nearby" && styles.axisChipActive]}
         >
-          <Text style={{ color: colors.t2, fontSize: 13 }}>@{user?.handle}</Text>
+          <Icon name="pin" size={12} color={axis === "nearby" ? colors.bg : colors.t2} />
+          <Text style={[styles.axisChipText, axis === "nearby" && { color: colors.bg }]}>Nearby</Text>
+        </Pressable>
+        <Pressable
+          onPress={() => setAxis("trending")}
+          style={[styles.axisChip, axis === "trending" && styles.axisChipActive]}
+        >
+          <Text style={[styles.axisChipText, axis === "trending" && { color: colors.bg }]}>🔥 Trending</Text>
         </Pressable>
       </View>
 
@@ -304,14 +339,36 @@ export default function FeedScreen() {
           <ActivityIndicator color={colors.accent} />
         </View>
       ) : items && items.length === 0 ? (
+        // Empty state — different copy for nearby vs trending so it
+        // never feels like "the whole app is broken". Nearby → nudge
+        // to trending as an alternative. Trending → very unlikely (app
+        // has zero global activity) but handled gracefully anyway.
         <View style={styles.empty}>
-          <Text style={styles.emptyTitle}>Nothing nearby yet</Text>
-          <Text style={styles.emptySub}>
-            No one's started a clustar in this area. Be the first — it only takes a second.
+          <Icon name="radar" size={40} color={colors.t3} />
+          <Text style={styles.emptyTitle}>
+            {axis === "nearby" ? "Quiet around here" : "Nothing trending right now"}
           </Text>
-          <Pressable style={styles.createBtn} onPress={() => router.push("/create")}>
-            <Text style={styles.createBtnText}>Create the first clustar</Text>
-          </Pressable>
+          <Text style={styles.emptySub}>
+            {axis === "nearby"
+              ? "No clustars in your discovery range. Start one to see who else is around — or peek at what's popping elsewhere."
+              : "Nobody's popping globally right now. Try nearby instead."}
+          </Text>
+          <View style={{ flexDirection: "row", gap: 8, marginTop: spacing.md }}>
+            {axis === "nearby" ? (
+              <>
+                <Pressable style={styles.createBtn} onPress={() => router.push("/create")}>
+                  <Text style={styles.createBtnText}>Create the first clustar</Text>
+                </Pressable>
+                <Pressable style={styles.altBtn} onPress={() => setAxis("trending")}>
+                  <Text style={styles.altBtnText}>🔥 Trending</Text>
+                </Pressable>
+              </>
+            ) : (
+              <Pressable style={styles.altBtn} onPress={() => setAxis("nearby")}>
+                <Text style={styles.altBtnText}>Back to nearby</Text>
+              </Pressable>
+            )}
+          </View>
         </View>
       ) : (
         <FlatList
@@ -582,6 +639,19 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.md,
   },
   rangeDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.success },
+  axisRow: {
+    flexDirection: "row", gap: 8,
+    paddingHorizontal: spacing.xl, paddingBottom: spacing.md,
+  },
+  axisChip: {
+    flexDirection: "row", alignItems: "center", gap: 5,
+    paddingHorizontal: 12, paddingVertical: 6,
+    borderRadius: 14,
+    backgroundColor: colors.s2,
+    borderWidth: 1, borderColor: colors.border,
+  },
+  axisChipActive: { backgroundColor: colors.accent, borderColor: colors.accent },
+  axisChipText: { color: colors.t2, fontSize: 12, fontWeight: "600" },
   nearbyPill: {
     flexDirection: "row", alignItems: "center", gap: 5,
     paddingHorizontal: 8, paddingVertical: 3,
@@ -612,6 +682,13 @@ const styles = StyleSheet.create({
     borderRadius: 20,
   },
   createBtnText: { color: colors.bg, fontWeight: "600" },
+  altBtn: {
+    paddingHorizontal: 16, paddingVertical: 10,
+    borderRadius: radius.md,
+    backgroundColor: colors.s2,
+    borderWidth: 1, borderColor: colors.borderS,
+  },
+  altBtnText: { color: colors.t1, fontWeight: "600" },
   card: {
     flexDirection: "row",
     gap: spacing.md,
