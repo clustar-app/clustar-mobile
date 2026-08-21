@@ -30,6 +30,8 @@ export type IconName =
   | "mail"         // email
   | "phone"        // phone
   | "eye"          // reveal
+  | "camera"       // take photo
+  | "trash"        // delete / remove
   | "chevron-down"
   | "chevron-up";
 
@@ -65,5 +67,7 @@ export function Icon({ name, size = 16, color = colors.t2, style }: Props) {
     case "chevron-down": return <Feather name="chevron-down" size={size} color={color} style={style} />;
     case "chevron-up":   return <Feather name="chevron-up" size={size} color={color} style={style} />;
     case "eye":          return <Feather name="eye" size={size} color={color} style={style} />;
+    case "camera":       return <Feather name="camera" size={size} color={color} style={style} />;
+    case "trash":        return <Feather name="trash-2" size={size} color={color} style={style} />;
   }
 }

@@ -13,6 +13,7 @@ import {
   Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useHeaderHeight } from "@react-navigation/elements";
 import { useLocalSearchParams } from "expo-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import * as ImagePicker from "expo-image-picker";
@@ -85,6 +86,10 @@ export default function ThreadScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { accessToken } = useAuth();
   const queryClient = useQueryClient();
+  // Header height so KeyboardAvoidingView lifts the composer exactly above
+  // the keyboard on both platforms. Without this, Android's adjustResize
+  // sometimes leaves the input under the keyboard.
+  const headerHeight = useHeaderHeight();
 
   // ── Composer state ─────────────────────────────────────────────────────
   const [draft, setDraft] = useState("");
@@ -401,10 +406,15 @@ export default function ThreadScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={["bottom"]}>
+      {/* Padding on both platforms lifts the composer above the keyboard.
+          Offset = actual stack header height so we don't overshoot. On
+          Android this pairs with softwareKeyboardLayoutMode: "resize"
+          (in app.config.js) — behavior="height" caused double-adjust and
+          hid the input on some devices. */}
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        keyboardVerticalOffset={Platform.OS === "android" ? 0 : 120}
+        behavior="padding"
+        keyboardVerticalOffset={headerHeight}
       >
         <FlatList
           data={tree}

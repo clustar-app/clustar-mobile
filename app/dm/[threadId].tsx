@@ -14,6 +14,7 @@ import {
   Modal,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useHeaderHeight } from "@react-navigation/elements";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Image } from "expo-image";
@@ -23,6 +24,7 @@ import { dmsApi, DmMessage, ApiError, mediaApi, safetyApi } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { getSocket } from "@/lib/realtime";
 import { Icon } from "@/components/Icon";
+import { ActionSheet } from "@/components/ActionSheet";
 import { TierBadge } from "@/components/TierBadge";
 import { PresenceDot } from "@/components/PresenceDot";
 import { formatLastSeen, computePresence } from "@/lib/presence";
@@ -106,11 +108,17 @@ export default function DmThreadScreen() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { accessToken, user } = useAuth();
+  // Header height so KeyboardAvoidingView lifts the composer exactly above
+  // the keyboard on both platforms. Without this, Android's adjustResize
+  // sometimes leaves the input under the keyboard when the stack header is
+  // taller than expected.
+  const headerHeight = useHeaderHeight();
   const [draft, setDraft] = useState("");
   const [pendingMedia, setPendingMedia] = useState<
     { url: string; type: string; width: number; height: number; localUri: string } | null
   >(null);
   const [uploading, setUploading] = useState(false);
+  const [attachOpen, setAttachOpen] = useState(false);
   const [typingFrom, setTypingFrom] = useState<string | null>(null);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const listRef = useRef<FlatList<any>>(null);
@@ -464,66 +472,48 @@ export default function DmThreadScreen() {
   });
 
   // ── Image attach flow ──
-  // Picker sheet: Camera / Library / Cancel. Same as the create screen.
-  const startAttach = async () => {
-    const pick = async (source: "camera" | "library") => {
-      const perm = source === "camera"
-        ? await ImagePicker.requestCameraPermissionsAsync()
-        : await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!perm.granted) {
-        Alert.alert("Permission needed", `Allow ${source === "camera" ? "camera" : "photo"} access.`);
-        return;
-      }
-      const res = source === "camera"
-        ? await ImagePicker.launchCameraAsync({
-            mediaTypes: ImagePicker.MediaTypeOptions.Images,
-            quality: 0.85,
-            exif: false,
-          })
-        : await ImagePicker.launchImageLibraryAsync({
-            mediaTypes: ImagePicker.MediaTypeOptions.Images,
-            quality: 0.85,
-            exif: false,
-          });
-      if (res.canceled || !res.assets[0]) return;
-      const asset = res.assets[0];
-      setUploading(true);
-      try {
-        const uploaded = await mediaApi.uploadImage(accessToken!, asset.uri, asset.mimeType ?? "image/jpeg");
-        setPendingMedia({
-          url: uploaded.url,
-          type: asset.mimeType ?? "image/jpeg",
-          width: asset.width,
-          height: asset.height,
-          localUri: asset.uri,
+  // Custom bottom-sheet picker (ActionSheet component). Uniform on iOS +
+  // Android, matches the app's dark theme. Same shape as the create screen.
+  const pickAttach = async (source: "camera" | "library") => {
+    const perm = source === "camera"
+      ? await ImagePicker.requestCameraPermissionsAsync()
+      : await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) {
+      Alert.alert("Permission needed", `Allow ${source === "camera" ? "camera" : "photo"} access.`);
+      return;
+    }
+    const res = source === "camera"
+      ? await ImagePicker.launchCameraAsync({
+          mediaTypes: ImagePicker.MediaTypeOptions.Images,
+          quality: 0.85,
+          exif: false,
+        })
+      : await ImagePicker.launchImageLibraryAsync({
+          mediaTypes: ImagePicker.MediaTypeOptions.Images,
+          quality: 0.85,
+          exif: false,
         });
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : "Upload failed";
-        Alert.alert("Couldn't attach", msg);
-      } finally {
-        setUploading(false);
-      }
-    };
-
-    if (Platform.OS === "ios") {
-      ActionSheetIOS.showActionSheetWithOptions(
-        {
-          options: ["Cancel", "Take Photo", "Choose from Library"],
-          cancelButtonIndex: 0,
-        },
-        (i) => {
-          if (i === 1) pick("camera");
-          if (i === 2) pick("library");
-        }
-      );
-    } else {
-      Alert.alert("Attach photo", undefined, [
-        { text: "Camera", onPress: () => pick("camera") },
-        { text: "Library", onPress: () => pick("library") },
-        { text: "Cancel", style: "cancel" },
-      ]);
+    if (res.canceled || !res.assets[0]) return;
+    const asset = res.assets[0];
+    setUploading(true);
+    try {
+      const uploaded = await mediaApi.uploadImage(accessToken!, asset.uri, asset.mimeType ?? "image/jpeg");
+      setPendingMedia({
+        url: uploaded.url,
+        type: asset.mimeType ?? "image/jpeg",
+        width: asset.width,
+        height: asset.height,
+        localUri: asset.uri,
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Upload failed";
+      Alert.alert("Couldn't attach", msg);
+    } finally {
+      setUploading(false);
     }
   };
+
+  const startAttach = () => setAttachOpen(true);
 
   const onSend = () => {
     if (sendMut.isPending || uploading) return;
@@ -829,14 +819,15 @@ export default function DmThreadScreen() {
         </View>
       )}
 
-      {/* Android: behavior="height" resizes the container to sit above
-          the keyboard. Prior version passed undefined which relied on
-          adjustResize alone — on some Android devices the composer
-          slid under the keyboard. */}
+      {/* Padding on both platforms lifts the composer above the keyboard.
+          Offset = actual stack header height so we don't overshoot. On
+          Android this pairs with softwareKeyboardLayoutMode: "resize"
+          (in app.config.js) — behavior="height" caused double-adjust and
+          hid the input on some devices. */}
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        keyboardVerticalOffset={Platform.OS === "android" ? 0 : 120}
+        behavior="padding"
+        keyboardVerticalOffset={headerHeight}
       >
         {q.isLoading ? (
           <View style={styles.center}>
@@ -1036,6 +1027,26 @@ export default function DmThreadScreen() {
           </Pressable>
         </Pressable>
       </Modal>
+
+      <ActionSheet
+        visible={attachOpen}
+        onClose={() => setAttachOpen(false)}
+        title="Attach a photo"
+        actions={[
+          { label: "Take photo", icon: "camera", onPress: () => pickAttach("camera") },
+          { label: "Choose from library", icon: "image", onPress: () => pickAttach("library") },
+          ...(pendingMedia
+            ? [
+                {
+                  label: "Remove attached photo",
+                  icon: "trash" as const,
+                  onPress: () => setPendingMedia(null),
+                  destructive: true,
+                },
+              ]
+            : []),
+        ]}
+      />
     </SafeAreaView>
   );
 }

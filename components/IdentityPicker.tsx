@@ -1,8 +1,16 @@
-import { useState } from "react";
-import { View, Text, Pressable, StyleSheet, Alert, ActivityIndicator } from "react-native";
+import { useEffect, useRef, useState } from "react";
+import {
+  View,
+  Text,
+  Pressable,
+  StyleSheet,
+  ActivityIndicator,
+  Animated,
+} from "react-native";
 import { useToast } from "@/lib/toast";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@/components/Icon";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { identityApi, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { colors, radius, spacing } from "@/lib/theme";
@@ -26,11 +34,8 @@ export function IdentityPicker({ value, onChange, locked, lockedReason }: Props)
   const queryClient = useQueryClient();
   const toast = useToast();
   const [rotating, setRotating] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
-  // Fetch (and cache) the user's current burner. Key is scoped by user.id
-  // so signing in as someone else doesn't briefly show the previous user's
-  // burner while their own fetch is in flight. Belt-and-suspenders with
-  // the cache-clear on signOut in AuthGate.
   const burnerQ = useQuery({
     queryKey: ["burner", user?.id],
     queryFn: () => identityApi.getBurner(accessToken!),
@@ -41,9 +46,6 @@ export function IdentityPicker({ value, onChange, locked, lockedReason }: Props)
   const rotate = useMutation({
     mutationFn: () => identityApi.rotateBurner(accessToken!),
     onSuccess: fresh => {
-      // Optimistically write the fresh burner into cache so the picker
-      // re-renders instantly, then invalidate so any other consumer refetches
-      // from the server (source of truth).
       queryClient.setQueryData(["burner", user?.id], fresh);
       queryClient.invalidateQueries({ queryKey: ["burner"] });
     },
@@ -53,27 +55,9 @@ export function IdentityPicker({ value, onChange, locked, lockedReason }: Props)
     },
   });
 
-  const confirmRotate = () => {
-    Alert.alert(
-      "Retire this burner?",
-      "You'll get a new anonymous handle. Old posts stay under the current burner name but you can never post as it again.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Rotate",
-          style: "destructive",
-          onPress: () => {
-            // mutate() is fire-and-forget — onError/onSettled handle any
-            // failure and reset UI. mutateAsync() throws even when onError
-            // catches, which surfaces as an "Uncaught (in promise)" error.
-            setRotating(true);
-            rotate.mutate(undefined, {
-              onSettled: () => setRotating(false),
-            });
-          },
-        },
-      ]
-    );
+  const handleRotate = () => {
+    setRotating(true);
+    rotate.mutate(undefined, { onSettled: () => setRotating(false) });
   };
 
   const burnerHandle = burnerQ.data?.handle ?? "loading...";
@@ -81,39 +65,37 @@ export function IdentityPicker({ value, onChange, locked, lockedReason }: Props)
   return (
     <View style={styles.wrap}>
       <View style={styles.tabs}>
-        <Pressable
+        <IdentityCard
+          selected={value === "user"}
+          disabled={!!locked}
           onPress={() => !locked && onChange("user")}
-          style={[styles.tab, value === "user" && styles.tabActive]}
-          disabled={!!locked}
-        >
-          <View style={[styles.avatarDot, styles.avatarMain]}>
-            <Text style={styles.avatarText}>
-              {(user?.handle ?? "?").slice(0, 1).toUpperCase()}
-            </Text>
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.tabTitle, value === "user" && { color: colors.accent }]}>
-              @{user?.handle ?? "you"}
-            </Text>
-            <Text style={styles.tabSub}>Your public account</Text>
-          </View>
-        </Pressable>
+          accentColor={colors.accent}
+          accentBg={colors.accentBg}
+          avatar={
+            <View style={[styles.avatarDot, styles.avatarMain]}>
+              <Text style={styles.avatarText}>
+                {(user?.handle ?? "?").slice(0, 1).toUpperCase()}
+              </Text>
+            </View>
+          }
+          title={`@${user?.handle ?? "you"}`}
+          subtitle="Your public account"
+        />
 
-        <Pressable
-          onPress={() => !locked && onChange("burner")}
-          style={[styles.tab, value === "burner" && styles.tabActive]}
+        <IdentityCard
+          selected={value === "burner"}
           disabled={!!locked}
-        >
-          <View style={[styles.avatarDot, styles.avatarAnon]}>
-            <Icon name="mask" size={12} color={colors.anon} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.tabTitle, value === "burner" && { color: colors.anon }]}>
-              @{burnerHandle}
-            </Text>
-            <Text style={styles.tabSub}>Anonymous · burner</Text>
-          </View>
-        </Pressable>
+          onPress={() => !locked && onChange("burner")}
+          accentColor={colors.anon}
+          accentBg={colors.anonBg}
+          avatar={
+            <View style={[styles.avatarDot, styles.avatarAnon]}>
+              <Icon name="mask" size={12} color={colors.anon} />
+            </View>
+          }
+          title={`@${burnerHandle}`}
+          subtitle="Anonymous · burner"
+        />
       </View>
 
       {locked && lockedReason && (
@@ -124,7 +106,15 @@ export function IdentityPicker({ value, onChange, locked, lockedReason }: Props)
       )}
 
       {!locked && value === "burner" && (
-        <Pressable onPress={confirmRotate} disabled={rotating} style={styles.rotateRow}>
+        <Pressable
+          onPress={() => setConfirmOpen(true)}
+          disabled={rotating}
+          android_ripple={{ color: colors.borderS }}
+          style={({ pressed }) => [
+            styles.rotateRow,
+            pressed && { opacity: 0.7 },
+          ]}
+        >
           {rotating ? (
             <ActivityIndicator size="small" color={colors.t3} />
           ) : (
@@ -135,7 +125,115 @@ export function IdentityPicker({ value, onChange, locked, lockedReason }: Props)
           )}
         </Pressable>
       )}
+
+      <ConfirmDialog
+        visible={confirmOpen}
+        onClose={() => setConfirmOpen(false)}
+        title="Retire this burner?"
+        message="You'll get a new anonymous handle. Old posts stay under the current burner name but you can never post as it again."
+        confirmLabel="Rotate"
+        onConfirm={handleRotate}
+        destructive
+        icon="repeat"
+      />
     </View>
+  );
+}
+
+// ── IdentityCard ────────────────────────────────────────────────────────────
+// Individual card. Animated scale + accent glow on selection. Ripple on
+// Android press. Fades avatar/text opacity when disabled (locked mode).
+
+interface CardProps {
+  selected: boolean;
+  disabled: boolean;
+  onPress: () => void;
+  accentColor: string;
+  accentBg: string;
+  avatar: React.ReactNode;
+  title: string;
+  subtitle: string;
+}
+
+function IdentityCard({
+  selected,
+  disabled,
+  onPress,
+  accentColor,
+  accentBg,
+  avatar,
+  title,
+  subtitle,
+}: CardProps) {
+  const scale = useRef(new Animated.Value(1)).current;
+  const glow = useRef(new Animated.Value(selected ? 1 : 0)).current;
+
+  useEffect(() => {
+    Animated.spring(glow, {
+      toValue: selected ? 1 : 0,
+      damping: 20,
+      stiffness: 200,
+      useNativeDriver: false, // borderColor doesn't support native driver
+    }).start();
+
+    Animated.spring(scale, {
+      toValue: selected ? 1 : 0.98,
+      damping: 18,
+      stiffness: 260,
+      useNativeDriver: true,
+    }).start();
+  }, [selected, glow, scale]);
+
+  const borderColor = glow.interpolate({
+    inputRange: [0, 1],
+    outputRange: [colors.border, accentColor],
+  });
+
+  const backgroundColor = glow.interpolate({
+    inputRange: [0, 1],
+    outputRange: [colors.s1, accentBg],
+  });
+
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={disabled}
+      android_ripple={{ color: colors.borderS, borderless: false }}
+      style={styles.tabPress}
+    >
+      <Animated.View
+        style={[
+          styles.tab,
+          {
+            borderColor,
+            backgroundColor,
+            transform: [{ scale }],
+          },
+          disabled && { opacity: 0.5 },
+        ]}
+      >
+        {avatar}
+        <View style={{ flex: 1 }}>
+          <Text
+            style={[
+              styles.tabTitle,
+              selected && { color: accentColor },
+            ]}
+            numberOfLines={1}
+          >
+            {title}
+          </Text>
+          <Text style={styles.tabSub} numberOfLines={1}>
+            {subtitle}
+          </Text>
+        </View>
+        {selected && (
+          <View style={[styles.check, { backgroundColor: accentColor }]}>
+            <Icon name="check" size={10} color={colors.bg} />
+          </View>
+        )}
+      </Animated.View>
+    </Pressable>
   );
 }
 
@@ -143,39 +241,45 @@ const styles = StyleSheet.create({
   wrap: { marginTop: spacing.sm },
   tabs: {
     flexDirection: "row",
-    gap: 8,
+    gap: 10,
+  },
+  tabPress: {
+    flex: 1,
+    borderRadius: radius.md,
+    overflow: "hidden",
   },
   tab: {
-    flex: 1,
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
     borderWidth: 1,
-    borderColor: colors.border,
     borderRadius: radius.md,
     padding: 12,
   },
-  tabActive: {
-    borderColor: colors.accent,
-    backgroundColor: colors.accentBg,
-  },
   avatarDot: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
     alignItems: "center",
     justifyContent: "center",
   },
   avatarMain: { backgroundColor: colors.accentBg },
   avatarAnon: { backgroundColor: colors.anonBg },
-  avatarText: { color: colors.accent, fontSize: 12, fontWeight: "600" },
+  avatarText: { color: colors.accent, fontSize: 13, fontWeight: "600" },
   tabTitle: { color: colors.t1, fontSize: 13, fontWeight: "500" },
   tabSub: { color: colors.t3, fontSize: 11, marginTop: 2 },
+  check: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   lockRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    marginTop: 8,
+    marginTop: 10,
     paddingHorizontal: 4,
   },
   lockText: { color: colors.t3, fontSize: 11 },
@@ -184,8 +288,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: 6,
-    marginTop: 8,
+    marginTop: 10,
     padding: 8,
+    borderRadius: radius.sm,
   },
   rotateText: { color: colors.t3, fontSize: 11 },
 });

@@ -14,6 +14,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { identityApi, BurnerRecord, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { Icon } from "@/components/Icon";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { colors, radius, spacing } from "@/lib/theme";
 
 // Burner identity screen. Mirrors the mockup:
@@ -26,6 +27,7 @@ export default function BurnersScreen() {
   const queryClient = useQueryClient();
   const { accessToken, user } = useAuth();
   const [rotating, setRotating] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   const q = useQuery({
     queryKey: ["burners", user?.id],
@@ -45,22 +47,10 @@ export default function BurnersScreen() {
     },
   });
 
-  const confirmRotate = () => {
-    Alert.alert(
-      "Retire this burner?",
-      "You'll get a new anonymous handle. Old posts stay under the current burner name but you can never post as it again.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Rotate",
-          style: "destructive",
-          onPress: () => {
-            setRotating(true);
-            rotate.mutate(undefined, { onSettled: () => setRotating(false) });
-          },
-        },
-      ]
-    );
+  const confirmRotate = () => setConfirmOpen(true);
+  const doRotate = () => {
+    setRotating(true);
+    rotate.mutate(undefined, { onSettled: () => setRotating(false) });
   };
 
   const active = q.data?.find(b => b.active);
@@ -147,6 +137,18 @@ export default function BurnersScreen() {
           )}
         />
       )}
+
+      <ConfirmDialog
+        visible={confirmOpen}
+        onClose={() => setConfirmOpen(false)}
+        title="Retire this burner?"
+        message="You'll get a new anonymous handle. Old posts stay under the current burner name, but you can never post as it again."
+        confirmLabel="Rotate"
+        onConfirm={doRotate}
+        destructive
+        icon="repeat"
+        loading={rotating}
+      />
     </SafeAreaView>
   );
 }

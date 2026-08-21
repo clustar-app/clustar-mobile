@@ -22,6 +22,7 @@ import { useAuth } from "@/lib/auth";
 import { getCurrentLocation, getPlaceName, Coords } from "@/lib/location";
 import { Icon } from "@/components/Icon";
 import { IdentityPicker } from "@/components/IdentityPicker";
+import { ActionSheet } from "@/components/ActionSheet";
 import { useToast } from "@/lib/toast";
 import { colors, radius, spacing } from "@/lib/theme";
 
@@ -71,6 +72,7 @@ export default function CreateScreen() {
   const [uploading, setUploading] = useState(false);
   const [identity, setIdentity] = useState<"user" | "burner">("user");
   const [visibility, setVisibility] = useState<"public" | "followers">("public");
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [anchorMode, setAnchorMode] = useState<"pinned" | "travelling">("pinned");
   const [lifespanHours, setLifespanHours] = useState<number>(DEFAULT_LIFESPAN);
 
@@ -200,18 +202,10 @@ export default function CreateScreen() {
   };
 
   const pickImage = () => {
-    // Native Alert acts as a source-chooser action sheet. Fine on both iOS
-    // and Android; upgrading to ActionSheetIOS / bottom sheet is a Phase 3
-    // polish.
-    Alert.alert(
-      "Add a photo",
-      undefined,
-      [
-        { text: "Take Photo", onPress: takePhoto },
-        { text: "Choose from Library", onPress: pickFromLibrary },
-        { text: "Cancel", style: "cancel" },
-      ]
-    );
+    // Custom bottom sheet — see ActionSheet component. Native Alert felt
+    // like a Java debug prompt on Android; the sheet gives us dark theme
+    // + accent colour + a proper "cancel" affordance without extra work.
+    setPickerOpen(true);
   };
 
   const notImplemented = (label: string) =>
@@ -536,6 +530,26 @@ export default function CreateScreen() {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      <ActionSheet
+        visible={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        title="Add a photo"
+        actions={[
+          { label: "Take photo", icon: "camera", onPress: takePhoto },
+          { label: "Choose from library", icon: "image", onPress: pickFromLibrary },
+          ...(pendingImage
+            ? [
+                {
+                  label: "Remove photo",
+                  icon: "trash" as const,
+                  onPress: () => setPendingImage(null),
+                  destructive: true,
+                },
+              ]
+            : []),
+        ]}
+      />
     </SafeAreaView>
   );
 }
