@@ -111,15 +111,12 @@ export default function ThreadScreen() {
       hide.remove();
     };
   }, []);
-  // Composer bottom padding:
-  //   • iOS: 8 with keyboard up, 8 + insets.bottom when closed.
-  //   • Android: static 8 + insets.bottom. Native resize handles the lift,
-  //     so no dynamic toggle — that toggle caused ghost padding on some
-  //     devices when the keyboard dismissed faster than the state update.
-  const composerBottomPad =
-    Platform.OS === "ios"
-      ? (keyboardShown ? 8 : 8 + insets.bottom)
-      : 8 + insets.bottom;
+  // Composer bottom padding. With the keyboard open the system inset area
+  // (home indicator / gesture bar) is covered by the keyboard, so we drop
+  // insets.bottom and keep a small 8px gutter. Closed, we re-add the inset
+  // so the composer clears the gesture bar. Same rule on both platforms
+  // now that Android is also edge-to-edge.
+  const composerBottomPad = keyboardShown ? 8 : 8 + insets.bottom;
 
   // ── Composer state ─────────────────────────────────────────────────────
   const [draft, setDraft] = useState("");
@@ -423,13 +420,16 @@ export default function ThreadScreen() {
           Android this pairs with softwareKeyboardLayoutMode: "resize"
           (in app.config.js) — behavior="height" caused double-adjust and
           hid the input on some devices. */}
-      {/* iOS: padding + headerHeight offset lifts the composer above the
-          keyboard. Android: undefined behavior — native window resize
-          (softwareKeyboardLayoutMode: "resize") handles the lift, and any
-          KAV behavior stacks on top, causing phantom padding on dismiss. */}
+      {/* Expo SDK 54 turns on edge-to-edge for Android by default, which
+          makes softwareKeyboardLayoutMode:"resize" a no-op — the window no
+          longer shrinks when the keyboard opens. So BOTH platforms need
+          KeyboardAvoidingView with "padding".
+          Offset: iOS needs the stack header height subtracted; Android's
+          KAV measures from the window top (which already excludes the
+          header under edge-to-edge), so offset 0. */}
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        behavior="padding"
         keyboardVerticalOffset={Platform.OS === "ios" ? headerHeight : 0}
       >
         <FlatList
