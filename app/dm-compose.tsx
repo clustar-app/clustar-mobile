@@ -8,9 +8,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
-  ActionSheetIOS,
 } from "react-native";
-import { Alert } from "@/lib/alert";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -19,6 +17,9 @@ import * as ImagePicker from "expo-image-picker";
 import { dmsApi, ApiError, mediaApi, identityApi } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { Icon } from "@/components/Icon";
+import { ActionSheet } from "@/components/ActionSheet";
+import { useToast } from "@/lib/toast";
+import { friendlyError } from "@/lib/errors";
 import { colors, radius, spacing } from "@/lib/theme";
 
 // First-message compose. Pre-fills recipient from URL params but leaves
@@ -39,6 +40,7 @@ export default function DmComposeScreen() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { accessToken, user } = useAuth();
+  const toast = useToast();
   const [handle, setHandle] = useState(initialHandle ?? "");
   const [body, setBody] = useState("");
   const [pendingMedia, setPendingMedia] = useState<
@@ -118,70 +120,51 @@ export default function DmComposeScreen() {
       }
     },
     onError: (err) => {
-      const msg = err instanceof ApiError ? err.message : "Couldn't send";
-      Alert.alert("Couldn't send", msg);
+      toast.error(friendlyError(err, "Couldn't send your message. Try again."));
     },
   });
 
-  const startAttach = async () => {
-    const pick = async (source: "camera" | "library") => {
-      const perm = source === "camera"
-        ? await ImagePicker.requestCameraPermissionsAsync()
-        : await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!perm.granted) {
-        Alert.alert("Permission needed", `Allow ${source === "camera" ? "camera" : "photo"} access.`);
-        return;
-      }
-      const res = source === "camera"
-        ? await ImagePicker.launchCameraAsync({
-            mediaTypes: ImagePicker.MediaTypeOptions.Images,
-            quality: 0.85,
-            exif: false,
-          })
-        : await ImagePicker.launchImageLibraryAsync({
-            mediaTypes: ImagePicker.MediaTypeOptions.Images,
-            quality: 0.85,
-            exif: false,
-          });
-      if (res.canceled || !res.assets[0]) return;
-      const asset = res.assets[0];
-      setUploading(true);
-      try {
-        const uploaded = await mediaApi.uploadImage(accessToken!, asset.uri, asset.mimeType ?? "image/jpeg");
-        setPendingMedia({
-          url: uploaded.url,
-          type: asset.mimeType ?? "image/jpeg",
-          width: asset.width,
-          height: asset.height,
-          localUri: asset.uri,
+  // Cross-platform picker via ActionSheet component. Same UX iOS/Android;
+  // the earlier split between ActionSheetIOS and Alert.alert was leaking
+  // the vanilla Android dialog through.
+  const pickFromSource = async (source: "camera" | "library") => {
+    const perm = source === "camera"
+      ? await ImagePicker.requestCameraPermissionsAsync()
+      : await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) {
+      toast.error(`${source === "camera" ? "Camera" : "Photo"} access denied — enable it in Settings.`);
+      return;
+    }
+    const res = source === "camera"
+      ? await ImagePicker.launchCameraAsync({
+          mediaTypes: ImagePicker.MediaTypeOptions.Images,
+          quality: 0.85,
+          exif: false,
+        })
+      : await ImagePicker.launchImageLibraryAsync({
+          mediaTypes: ImagePicker.MediaTypeOptions.Images,
+          quality: 0.85,
+          exif: false,
         });
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : "Upload failed";
-        Alert.alert("Couldn't attach", msg);
-      } finally {
-        setUploading(false);
-      }
-    };
-
-    if (Platform.OS === "ios") {
-      ActionSheetIOS.showActionSheetWithOptions(
-        {
-          options: ["Cancel", "Take Photo", "Choose from Library"],
-          cancelButtonIndex: 0,
-        },
-        (i) => {
-          if (i === 1) pick("camera");
-          if (i === 2) pick("library");
-        }
-      );
-    } else {
-      Alert.alert("Attach photo", undefined, [
-        { text: "Camera", onPress: () => pick("camera") },
-        { text: "Library", onPress: () => pick("library") },
-        { text: "Cancel", style: "cancel" },
-      ]);
+    if (res.canceled || !res.assets[0]) return;
+    const asset = res.assets[0];
+    setUploading(true);
+    try {
+      const uploaded = await mediaApi.uploadImage(accessToken!, asset.uri, asset.mimeType ?? "image/jpeg");
+      setPendingMedia({
+        url: uploaded.url,
+        type: asset.mimeType ?? "image/jpeg",
+        width: asset.width,
+        height: asset.height,
+        localUri: asset.uri,
+      });
+    } catch (err) {
+      toast.error(friendlyError(err, "Couldn't attach that photo — try again."));
+    } finally {
+      setUploading(false);
     }
   };
+  const startAttach = () => setPickerOpen(true);
 
   const canSend =
     handle.trim().length > 0 &&
@@ -311,6 +294,26 @@ export default function DmComposeScreen() {
           declined sender can't request again for 30 days.
         </Text>
       </KeyboardAvoidingView>
+
+      <ActionSheet
+        visible={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        title="Attach a photo"
+        actions={[
+          { label: "Take photo", icon: "camera", onPress: () => pickFromSource("camera") },
+          { label: "Choose from library", icon: "image", onPress: () => pickFromSource("library") },
+          ...(pendingMedia
+            ? [
+                {
+                  label: "Remove attached photo",
+                  icon: "trash" as const,
+                  onPress: () => setPendingMedia(null),
+                  destructive: true,
+                },
+              ]
+            : []),
+        ]}
+      />
     </SafeAreaView>
   );
 }

@@ -9,7 +9,6 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
-  ActionSheetIOS,
   Modal,
   Keyboard,
 } from "react-native";
