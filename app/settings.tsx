@@ -6,11 +6,11 @@ import {
   Pressable,
   StyleSheet,
   ScrollView,
-  Alert,
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
 } from "react-native";
+import { Alert } from "@/lib/alert";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -19,6 +19,7 @@ import { Image } from "expo-image";
 import { userApi, mediaApi, ApiError, preferencesApi } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { Icon } from "@/components/Icon";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import Slider from "@react-native-community/slider";
 import {
   usePreferences, setPreference, RANGE_MIN_M, RANGE_MAX_M,
@@ -33,6 +34,13 @@ export default function SettingsScreen() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { accessToken, user, signOut, updateUser } = useAuth();
+  const [signOutOpen, setSignOutOpen] = useState(false);
+  const doSignOut = () => {
+    // Kick off async sign-out immediately. Its state updates trigger
+    // AuthGate to redirect to /(auth)/splash automatically — nothing to
+    // navigate here.
+    signOut();
+  };
 
   // Load fresh profile to seed the form (server has canonical values).
   const meQuery = useQuery({
@@ -259,12 +267,7 @@ export default function SettingsScreen() {
               <View style={styles.divider} />
 
               <Pressable
-                onPress={() =>
-                  Alert.alert("Sign out?", "You'll be returned to the login screen.", [
-                    { text: "Cancel", style: "cancel" },
-                    { text: "Sign out", style: "destructive", onPress: () => signOut() },
-                  ])
-                }
+                onPress={() => setSignOutOpen(true)}
                 style={styles.signOutBtn}
               >
                 <Text style={styles.signOutBtnText}>Sign out</Text>
@@ -273,6 +276,17 @@ export default function SettingsScreen() {
           )}
         </ScrollView>
       </KeyboardAvoidingView>
+
+      <ConfirmDialog
+        visible={signOutOpen}
+        onClose={() => setSignOutOpen(false)}
+        title="Sign out?"
+        message="You'll be returned to the login screen."
+        confirmLabel="Sign out"
+        onConfirm={doSignOut}
+        destructive
+        icon="close"
+      />
     </SafeAreaView>
   );
 }

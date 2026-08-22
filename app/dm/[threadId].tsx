@@ -9,11 +9,12 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
-  Alert,
   ActionSheetIOS,
   Modal,
+  Keyboard,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { Alert } from "@/lib/alert";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -113,6 +114,29 @@ export default function DmThreadScreen() {
   // sometimes leaves the input under the keyboard when the stack header is
   // taller than expected.
   const headerHeight = useHeaderHeight();
+  // We drop the SafeAreaView's bottom edge and apply it manually to the
+  // composer via insets.bottom. That way, when the keyboard opens on iOS,
+  // padding "padding" behavior doesn't double-count the home-indicator area
+  // (which produced ~34px of empty space above the keyboard on iPhone).
+  // When the keyboard is up we skip the inset — the keyboard already covers
+  // the home-indicator strip.
+  const insets = useSafeAreaInsets();
+  const [keyboardShown, setKeyboardShown] = useState(false);
+  useEffect(() => {
+    const show = Keyboard.addListener(
+      Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow",
+      () => setKeyboardShown(true)
+    );
+    const hide = Keyboard.addListener(
+      Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide",
+      () => setKeyboardShown(false)
+    );
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
+  const composerBottomPad = keyboardShown ? 8 : 8 + insets.bottom;
   const [draft, setDraft] = useState("");
   const [pendingMedia, setPendingMedia] = useState<
     { url: string; type: string; width: number; height: number; localUri: string } | null
@@ -664,7 +688,7 @@ export default function DmThreadScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>
+    <SafeAreaView style={styles.safe} edges={["top"]}>
       <View style={styles.topBar}>
         <Pressable onPress={() => router.back()} hitSlop={12} style={styles.topBtn}>
           <Icon name="back" size={18} color={colors.t2} />
@@ -965,7 +989,7 @@ export default function DmThreadScreen() {
         )}
         {/* Composer hidden while previewing an incoming request OR while blocked */}
         {!isPreviewingRequest && !thread?.is_blocked_by_them && !thread?.is_blocked_by_me && (
-        <View style={styles.composer}>
+        <View style={[styles.composer, { paddingBottom: composerBottomPad }]}>
           <Pressable
             onPress={startAttach}
             disabled={sendMut.isPending || uploading}

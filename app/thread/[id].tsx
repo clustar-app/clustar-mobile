@@ -10,9 +10,10 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
-  Alert,
+  Keyboard,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { Alert } from "@/lib/alert";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useLocalSearchParams } from "expo-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -23,6 +24,7 @@ import { useAuth } from "@/lib/auth";
 import { getSocket } from "@/lib/realtime";
 import { ImageViewer } from "@/components/ImageViewer";
 import { Icon } from "@/components/Icon";
+import { ActionSheet } from "@/components/ActionSheet";
 import { TierBadge } from "@/components/TierBadge";
 import { IdentityPicker } from "@/components/IdentityPicker";
 import { useToast } from "@/lib/toast";
@@ -90,11 +92,32 @@ export default function ThreadScreen() {
   // the keyboard on both platforms. Without this, Android's adjustResize
   // sometimes leaves the input under the keyboard.
   const headerHeight = useHeaderHeight();
+  // Drop SafeAreaView bottom edge — apply it manually via insets.bottom on
+  // the composer only when the keyboard is closed. Otherwise iOS
+  // double-counts the home-indicator area over the keyboard.
+  const insets = useSafeAreaInsets();
+  const [keyboardShown, setKeyboardShown] = useState(false);
+  useEffect(() => {
+    const show = Keyboard.addListener(
+      Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow",
+      () => setKeyboardShown(true)
+    );
+    const hide = Keyboard.addListener(
+      Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide",
+      () => setKeyboardShown(false)
+    );
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
+  const composerBottomPad = keyboardShown ? 8 : 8 + insets.bottom;
 
   // ── Composer state ─────────────────────────────────────────────────────
   const [draft, setDraft] = useState("");
   const [pendingImage, setPendingImage] = useState<{ uri: string; contentType: string } | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
   // If set, next send is a reply to this specific reply. Cleared on send.
   const [replyingTo, setReplyingTo] = useState<ReplyItem | null>(null);
 
@@ -278,57 +301,38 @@ export default function ThreadScreen() {
   // Prompts Camera / Library / Cancel, matching the create-clustar and
   // DM composer flows. Consistency across the app: any image-attach
   // entrypoint offers both camera capture and library selection.
-  const pickImage = async () => {
-    const pick = async (source: "camera" | "library") => {
-      const perm = source === "camera"
-        ? await ImagePicker.requestCameraPermissionsAsync()
-        : await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!perm.granted) {
-        toast.error(`${source === "camera" ? "Camera" : "Photo"} access denied — enable in Settings`);
-        return;
-      }
-      const result = source === "camera"
-        ? await ImagePicker.launchCameraAsync({
-            mediaTypes: ["images"] as any,
-            quality: 0.7,
-            allowsEditing: false,
-          })
-        : await ImagePicker.launchImageLibraryAsync({
-            mediaTypes: ["images"] as any,
-            quality: 0.7,
-            allowsEditing: false,
-          });
-      if (result.canceled || result.assets.length === 0) return;
-      const asset = result.assets[0];
-      const inferred = asset.mimeType ?? (
-        /\.gif$/i.test(asset.uri) ? "image/gif" :
-        /\.png$/i.test(asset.uri) ? "image/png" :
-        /\.webp$/i.test(asset.uri) ? "image/webp" :
-        "image/jpeg"
-      );
-      setPendingImage({ uri: asset.uri, contentType: inferred });
-    };
-
-    if (Platform.OS === "ios") {
-      const { ActionSheetIOS } = require("react-native");
-      ActionSheetIOS.showActionSheetWithOptions(
-        {
-          options: ["Cancel", "Take Photo", "Choose from Library"],
-          cancelButtonIndex: 0,
-        },
-        (i: number) => {
-          if (i === 1) pick("camera");
-          if (i === 2) pick("library");
-        }
-      );
-    } else {
-      Alert.alert("Attach photo", undefined, [
-        { text: "Camera", onPress: () => pick("camera") },
-        { text: "Library", onPress: () => pick("library") },
-        { text: "Cancel", style: "cancel" },
-      ]);
+  // Custom cross-platform ActionSheet — same UX on iOS + Android. Uses the
+  // ActionSheet component mounted below; opening only flips visible state.
+  const pickFromSource = async (source: "camera" | "library") => {
+    const perm = source === "camera"
+      ? await ImagePicker.requestCameraPermissionsAsync()
+      : await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) {
+      toast.error(`${source === "camera" ? "Camera" : "Photo"} access denied — enable it in Settings to attach.`);
+      return;
     }
+    const result = source === "camera"
+      ? await ImagePicker.launchCameraAsync({
+          mediaTypes: ["images"] as any,
+          quality: 0.7,
+          allowsEditing: false,
+        })
+      : await ImagePicker.launchImageLibraryAsync({
+          mediaTypes: ["images"] as any,
+          quality: 0.7,
+          allowsEditing: false,
+        });
+    if (result.canceled || result.assets.length === 0) return;
+    const asset = result.assets[0];
+    const inferred = asset.mimeType ?? (
+      /\.gif$/i.test(asset.uri) ? "image/gif" :
+      /\.png$/i.test(asset.uri) ? "image/png" :
+      /\.webp$/i.test(asset.uri) ? "image/webp" :
+      "image/jpeg"
+    );
+    setPendingImage({ uri: asset.uri, contentType: inferred });
   };
+  const pickImage = () => setPickerOpen(true);
 
   // ── Like handlers ──────────────────────────────────────────────────────
   // Optimistic: patch the cached item's liked_by_me + like_count, roll back
@@ -405,7 +409,7 @@ export default function ThreadScreen() {
   const clustar = clustarQuery.data;
 
   return (
-    <SafeAreaView style={styles.safe} edges={["bottom"]}>
+    <SafeAreaView style={styles.safe} edges={[]}>
       {/* Padding on both platforms lifts the composer above the keyboard.
           Offset = actual stack header height so we don't overshoot. On
           Android this pairs with softwareKeyboardLayoutMode: "resize"
@@ -784,7 +788,7 @@ export default function ThreadScreen() {
           </View>
         )}
 
-        <View style={styles.composer}>
+        <View style={[styles.composer, { paddingBottom: composerBottomPad }]}>
           <Pressable
             onPress={pickImage}
             style={styles.imgBtn}
@@ -818,6 +822,26 @@ export default function ThreadScreen() {
       </KeyboardAvoidingView>
 
       <ImageViewer uri={viewerUri} onClose={() => setViewerUri(null)} />
+
+      <ActionSheet
+        visible={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        title="Add a photo"
+        actions={[
+          { label: "Take photo", icon: "camera", onPress: () => pickFromSource("camera") },
+          { label: "Choose from library", icon: "image", onPress: () => pickFromSource("library") },
+          ...(pendingImage
+            ? [
+                {
+                  label: "Remove photo",
+                  icon: "trash" as const,
+                  onPress: () => setPendingImage(null),
+                  destructive: true,
+                },
+              ]
+            : []),
+        ]}
+      />
     </SafeAreaView>
   );
 }

@@ -161,6 +161,13 @@ export function useAuthProviderValue(): AuthState {
       }).catch(() => {});
     }
     authStore.clear();
+    // Wipe local per-user artefacts so the next account starts clean.
+    // Drafts especially — a failed clustar draft from user A must not
+    // repopulate the composer for user B.
+    try {
+      const { clearDraft } = await import("./draftStore.js");
+      await clearDraft();
+    } catch { /* ignore — draft cleanup is best-effort */ }
     await Promise.all([
       storage.removeItem(ACCESS_KEY),
       storage.removeItem(REFRESH_KEY),

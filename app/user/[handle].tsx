@@ -6,10 +6,10 @@ import {
   StyleSheet,
   FlatList,
   ActivityIndicator,
-  Alert,
   RefreshControl,
   Dimensions,
 } from "react-native";
+import { Alert } from "@/lib/alert";
 
 // Fixed cell size = window / 3. Prevents FlatList from letting a lone item
 // stretch to full width when there's only 1-2 posts. Cells are flush (no

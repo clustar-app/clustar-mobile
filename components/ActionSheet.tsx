@@ -11,6 +11,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Icon } from "@/components/Icon";
+import { onToastError } from "@/lib/toast";
 import { colors, radius, spacing } from "@/lib/theme";
 
 // ── ActionSheet ────────────────────────────────────────────────────────────
@@ -59,6 +60,15 @@ export function ActionSheet({
 }: Props) {
   const translateY = useRef(new Animated.Value(SCREEN_H)).current;
   const backdropOpacity = useRef(new Animated.Value(0)).current;
+
+  // If an error toast fires while this sheet is open, close ourselves so
+  // the toast is fully visible (otherwise the sheet + backdrop layer over
+  // it on Android's system nav bar).
+  useEffect(() => {
+    if (!visible) return;
+    const unsub = onToastError(() => onClose());
+    return unsub;
+  }, [visible, onClose]);
 
   useEffect(() => {
     if (visible) {

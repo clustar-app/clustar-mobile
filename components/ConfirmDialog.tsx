@@ -9,6 +9,7 @@ import {
   Easing,
 } from "react-native";
 import { Icon } from "@/components/Icon";
+import { onToastError } from "@/lib/toast";
 import { colors, radius, spacing } from "@/lib/theme";
 
 // ── ConfirmDialog ──────────────────────────────────────────────────────────
@@ -56,6 +57,13 @@ export function ConfirmDialog({
   const scale = useRef(new Animated.Value(0.92)).current;
   const opacity = useRef(new Animated.Value(0)).current;
 
+  // Close on error toast so the toast is fully visible over our backdrop.
+  useEffect(() => {
+    if (!visible) return;
+    const unsub = onToastError(() => onClose());
+    return unsub;
+  }, [visible, onClose]);
+
   useEffect(() => {
     if (visible) {
       Animated.parallel([
@@ -92,8 +100,12 @@ export function ConfirmDialog({
   }, [visible, scale, opacity]);
 
   const handleConfirm = () => {
+    // Fire the action first, then close. Deferring the callback with
+    // setTimeout means any confirm that unmounts the tree (e.g. sign-out
+    // rerouting to the auth stack) loses the callback. Firing first
+    // guarantees it runs; the dialog still animates out visually.
+    onConfirm();
     onClose();
-    setTimeout(onConfirm, 160);
   };
 
   const accentColor = destructive ? colors.danger : colors.accent;

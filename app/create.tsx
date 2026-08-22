@@ -10,14 +10,17 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
+  Keyboard,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import * as ImagePicker from "expo-image-picker";
 import { Image } from "expo-image";
 import Slider from "@react-native-community/slider";
 import { clustarApi, mediaApi, ApiError, FeedItem } from "@/lib/api";
+import { friendlyError } from "@/lib/errors";
+import { saveDraft, loadDraft, clearDraft } from "@/lib/draftStore";
 import { useAuth } from "@/lib/auth";
 import { getCurrentLocation, getPlaceName, Coords } from "@/lib/location";
 import { Icon } from "@/components/Icon";
@@ -73,6 +76,25 @@ export default function CreateScreen() {
   const [identity, setIdentity] = useState<"user" | "burner">("user");
   const [visibility, setVisibility] = useState<"public" | "followers">("public");
   const [pickerOpen, setPickerOpen] = useState(false);
+  // Drop bottom safe-area inset from SafeAreaView; apply manually to the
+  // scroll footer so we don't double-count against the keyboard on iOS.
+  const insets = useSafeAreaInsets();
+  const [keyboardShown, setKeyboardShown] = useState(false);
+  useEffect(() => {
+    const show = Keyboard.addListener(
+      Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow",
+      () => setKeyboardShown(true)
+    );
+    const hide = Keyboard.addListener(
+      Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide",
+      () => setKeyboardShown(false)
+    );
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
+  const bottomPad = keyboardShown ? 0 : insets.bottom;
   const [anchorMode, setAnchorMode] = useState<"pinned" | "travelling">("pinned");
   const [lifespanHours, setLifespanHours] = useState<number>(DEFAULT_LIFESPAN);
 
@@ -87,6 +109,25 @@ export default function CreateScreen() {
       } catch (err) {
         setLocError(err instanceof Error ? err.message : "Location error");
       }
+    })();
+  }, []);
+
+  // Restore an in-progress draft if a previous post failed. Runs once
+  // on mount. Doesn't overwrite state the user has already typed — early
+  // returns if `body` isn't empty (they're already composing something).
+  useEffect(() => {
+    (async () => {
+      const draft = await loadDraft();
+      if (!draft) return;
+      // Only repopulate if the composer is still pristine; if the user
+      // already started typing, respect their new input.
+      setBody((cur) => (cur ? cur : draft.body));
+      setRadiusM(draft.radiusM);
+      setIdentity(draft.identity);
+      setVisibility(draft.visibility);
+      setAnchorMode(draft.anchorMode);
+      setLifespanHours(draft.lifespanHours);
+      setPendingImage(draft.pendingImage);
     })();
   }, []);
 
@@ -151,11 +192,29 @@ export default function CreateScreen() {
           .catch(err => console.log("[travelling] start failed:", err));
       }
 
+      // Post landed — no need to keep the retry draft around.
+      clearDraft();
       router.back();
     },
     onError: err => {
-      const msg = err instanceof ApiError ? err.message : "Failed to post";
-      toast.error(msg);
+      // Persist the draft so we can repopulate the composer if the user
+      // taps the "+" again after the error toast. Then dismiss the modal
+      // so the toast is fully visible on the feed below.
+      saveDraft({
+        body,
+        radiusM,
+        identity,
+        visibility,
+        anchorMode,
+        lifespanHours,
+        pendingImage,
+      });
+      const message = friendlyError(err, "Couldn't post your clustar. Try again.");
+      router.back();
+      // Small delay so the router transition finishes before the toast
+      // slides in — otherwise the toast can animate under the departing
+      // modal on lower-end devices.
+      setTimeout(() => toast.error(message), 250);
     },
   });
 
@@ -216,11 +275,11 @@ export default function CreateScreen() {
   const isBusy = mutation.isPending || uploading;
 
   return (
-    <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>
+    <SafeAreaView style={styles.safe} edges={["top"]}>
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        keyboardVerticalOffset={Platform.OS === "android" ? 0 : 120}
+        behavior="padding"
+        keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
       >
         {/* Top bar — mirrors the mockup: close, title, Post pill on the right */}
         <View style={styles.topBar}>
@@ -244,7 +303,11 @@ export default function CreateScreen() {
 
         <ScrollView
           style={{ flex: 1 }}
-          contentContainerStyle={{ flexGrow: 1, paddingHorizontal: spacing.xl, paddingBottom: 120 }}
+          contentContainerStyle={{
+            flexGrow: 1,
+            paddingHorizontal: spacing.xl,
+            paddingBottom: 32 + bottomPad,
+          }}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >

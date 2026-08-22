@@ -8,6 +8,7 @@ import {
   RefreshControl,
   ActivityIndicator,
 } from "react-native";
+import { Alert } from "@/lib/alert";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";

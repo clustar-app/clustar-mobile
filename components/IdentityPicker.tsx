@@ -165,7 +165,13 @@ function IdentityCard({
   title,
   subtitle,
 }: CardProps) {
-  const scale = useRef(new Animated.Value(1)).current;
+  // Two Animated.Values, split across two nested Animated.Views. React
+  // Native's Animated system refuses to mix native-driven props (transform)
+  // with JS-driven props (color) on the SAME node — you get the runtime
+  // error "Attempting to run JS driven animation on animated node that has
+  // been moved to native earlier". Nesting keeps each driver on its own
+  // node so both animate freely.
+  const scale = useRef(new Animated.Value(selected ? 1 : 0.98)).current;
   const glow = useRef(new Animated.Value(selected ? 1 : 0)).current;
 
   useEffect(() => {
@@ -173,14 +179,14 @@ function IdentityCard({
       toValue: selected ? 1 : 0,
       damping: 20,
       stiffness: 200,
-      useNativeDriver: false, // borderColor doesn't support native driver
+      useNativeDriver: false, // borderColor / backgroundColor: JS only
     }).start();
 
     Animated.spring(scale, {
       toValue: selected ? 1 : 0.98,
       damping: 18,
       stiffness: 260,
-      useNativeDriver: true,
+      useNativeDriver: true, // transform: native driven for smoothness
     }).start();
   }, [selected, glow, scale]);
 
@@ -201,37 +207,37 @@ function IdentityCard({
       android_ripple={{ color: colors.borderS, borderless: false }}
       style={styles.tabPress}
     >
-      <Animated.View
-        style={[
-          styles.tab,
-          {
-            borderColor,
-            backgroundColor,
-            transform: [{ scale }],
-          },
-          disabled && { opacity: 0.5 },
-        ]}
-      >
-        {avatar}
-        <View style={{ flex: 1 }}>
-          <Text
-            style={[
-              styles.tabTitle,
-              selected && { color: accentColor },
-            ]}
-            numberOfLines={1}
-          >
-            {title}
-          </Text>
-          <Text style={styles.tabSub} numberOfLines={1}>
-            {subtitle}
-          </Text>
-        </View>
-        {selected && (
-          <View style={[styles.check, { backgroundColor: accentColor }]}>
-            <Icon name="check" size={10} color={colors.bg} />
+      {/* Outer node: native-driven transform */}
+      <Animated.View style={{ transform: [{ scale }] }}>
+        {/* Inner node: JS-driven color changes */}
+        <Animated.View
+          style={[
+            styles.tab,
+            { borderColor, backgroundColor },
+            disabled && { opacity: 0.5 },
+          ]}
+        >
+          {avatar}
+          <View style={{ flex: 1 }}>
+            <Text
+              style={[
+                styles.tabTitle,
+                selected && { color: accentColor },
+              ]}
+              numberOfLines={1}
+            >
+              {title}
+            </Text>
+            <Text style={styles.tabSub} numberOfLines={1}>
+              {subtitle}
+            </Text>
           </View>
-        )}
+          {selected && (
+            <View style={[styles.check, { backgroundColor: accentColor }]}>
+              <Icon name="check" size={10} color={colors.bg} />
+            </View>
+          )}
+        </Animated.View>
       </Animated.View>
     </Pressable>
   );

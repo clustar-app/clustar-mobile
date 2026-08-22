@@ -17,6 +17,9 @@ import {
   startTravellingAnchorTask, stopTravellingAnchorTask, isTravellingAnchorTaskRunning,
 } from "@/lib/backgroundLocation";
 import { colors } from "@/lib/theme";
+import { ToastProvider } from "@/lib/toast";
+import { AlertHost } from "@/lib/alert";
+import { RootSiblingParent } from "react-native-root-siblings";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -211,8 +214,10 @@ export default function RootLayout() {
 
   return (
     <SafeAreaProvider>
+      <RootSiblingParent>
       <AuthContext.Provider value={auth}>
         <QueryClientProvider client={queryClient}>
+          <ToastProvider>
           <StatusBar style="light" />
           <AuthGate>
             <Stack
@@ -240,17 +245,29 @@ export default function RootLayout() {
                 (X + title + Post), so we don't need the default header
                 stacked on top of it.
               */}
-              {/* Back to native modal presentation — the transparentModal
-                  workaround was only needed for toast layering, which we've
-                  reverted. headerShown:false so the screen's own top bar
-                  isn't stacked under a default navigator header. */}
+              {/* transparentModal keeps the underlying screen in the React
+                  tree, so RootSiblings-based overlays (toasts) render ABOVE
+                  the modal on iOS. Native "modal" pushes a separate VC on
+                  iOS and toasts fall behind it. slide_from_bottom preserves
+                  the sheet feel. headerShown:false so the screen's own top
+                  bar isn't stacked under a default navigator header. */}
               <Stack.Screen
                 name="create"
-                options={{ presentation: "modal", headerShown: false }}
+                options={{
+                  presentation: "transparentModal",
+                  animation: "slide_from_bottom",
+                  headerShown: false,
+                  contentStyle: { backgroundColor: colors.bg },
+                }}
               />
               <Stack.Screen
                 name="repost"
-                options={{ presentation: "modal", headerShown: false }}
+                options={{
+                  presentation: "transparentModal",
+                  animation: "slide_from_bottom",
+                  headerShown: false,
+                  contentStyle: { backgroundColor: colors.bg },
+                }}
               />
               <Stack.Screen name="thread/[id]" options={{ title: "" }} />
               <Stack.Screen name="user/[handle]" options={{ headerShown: false }} />
@@ -273,8 +290,11 @@ export default function RootLayout() {
               />
             </Stack>
           </AuthGate>
+          <AlertHost />
+          </ToastProvider>
         </QueryClientProvider>
       </AuthContext.Provider>
+      </RootSiblingParent>
     </SafeAreaProvider>
   );
 }

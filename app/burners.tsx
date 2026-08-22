@@ -6,8 +6,8 @@ import {
   StyleSheet,
   FlatList,
   ActivityIndicator,
-  Alert,
 } from "react-native";
+import { Alert } from "@/lib/alert";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
