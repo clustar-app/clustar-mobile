@@ -111,7 +111,15 @@ export default function ThreadScreen() {
       hide.remove();
     };
   }, []);
-  const composerBottomPad = keyboardShown ? 8 : 8 + insets.bottom;
+  // Composer bottom padding:
+  //   • iOS: 8 with keyboard up, 8 + insets.bottom when closed.
+  //   • Android: static 8 + insets.bottom. Native resize handles the lift,
+  //     so no dynamic toggle — that toggle caused ghost padding on some
+  //     devices when the keyboard dismissed faster than the state update.
+  const composerBottomPad =
+    Platform.OS === "ios"
+      ? (keyboardShown ? 8 : 8 + insets.bottom)
+      : 8 + insets.bottom;
 
   // ── Composer state ─────────────────────────────────────────────────────
   const [draft, setDraft] = useState("");
@@ -415,10 +423,14 @@ export default function ThreadScreen() {
           Android this pairs with softwareKeyboardLayoutMode: "resize"
           (in app.config.js) — behavior="height" caused double-adjust and
           hid the input on some devices. */}
+      {/* iOS: padding + headerHeight offset lifts the composer above the
+          keyboard. Android: undefined behavior — native window resize
+          (softwareKeyboardLayoutMode: "resize") handles the lift, and any
+          KAV behavior stacks on top, causing phantom padding on dismiss. */}
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior="padding"
-        keyboardVerticalOffset={headerHeight}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        keyboardVerticalOffset={Platform.OS === "ios" ? headerHeight : 0}
       >
         <FlatList
           data={tree}
